@@ -8,6 +8,9 @@
         <arg name="depth_module.depth_profile" value="640x480x30"/>
     </include>
 
-    <node pkg="drone_pointcontrol" exec="visioncontrol" on_exit='shutdown'/>
+    <node pkg="drone_pointcontrol" exec="visioncontrol" on_exit='shutdown'>
+        <param name="mask_path" value="$(find-pkg-share drone_pointcontrol)/masks/dronemask.png"/>
+    </node>
+
 
 </launch>

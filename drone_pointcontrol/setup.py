@@ -12,7 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (os.path.join('share', package_name, 'launch'), glob('masks/*.png')),
+        (os.path.join('share', package_name, 'masks'), glob('masks/*.png')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.xml')),
     ],
@@ -29,7 +29,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'visioncontrol = drone_pointcontrol.visioncontrol:main',
+            'visioncontrol = drone_pointcontrol.foundationposetracker:main',
         ],
     },
 )

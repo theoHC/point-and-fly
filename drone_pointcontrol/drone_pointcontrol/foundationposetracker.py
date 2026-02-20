@@ -25,6 +25,8 @@ import numpy as np
 
 import json
 
+import requests
+
 import rclpy
 from rclpy import spin_once
 from rclpy.node import Node
@@ -36,7 +38,7 @@ class FoundationPoseClient:
     def __init__(self, url):
         self.url = url.rstrip("/")
 
-    async def estimate(
+    def estimate(
         self,
         rgb,
         depth,
@@ -58,12 +60,21 @@ class FoundationPoseClient:
             "depth_shape": json.dumps(list(depth.shape))
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self.url + "/pose", data=data) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
+        r = requests.post(self.url + "/pose", files=files, data=data, timeout=60)
+        return r.json()
 
-        return result
+def rs_to_numpy(frame):
+    """Convert RealSense frame to NumPy array."""
+    return np.asanyarray(frame.get_data())
+
+def rs_get_K(intr):
+    """Build 3x3 K from pyrealsense2 intrinsics as float64 (fx, fy, ppx, ppy)."""
+    # pyrealsense2.intrinsics exposes fx, fy, ppx, ppy. These map to cx, cy as in literature.
+    # Keep float64 to match trimesh and your dataset reader's K.
+    K = np.array([[intr.fx, 0.0, intr.ppx],
+                  [0.0,     intr.fy, intr.ppy],
+                  [0.0,     0.0,     1.0    ]], dtype=np.float64)
+    return K
 
 class PointerController(Node):
     def __init__(self):
@@ -93,13 +104,13 @@ class PointerController(Node):
             self,
             Image,
             '/camera/camera/aligned_depth_to_color/image_raw',
-            qos
+            qos_profile=qos
         )
         self.image_sub = Subscriber(
             self,
             Image,
             '/camera/camera/color/image_raw',
-            qos
+            qos_profile=qos
         )
 
         self.approximate_time_synchronizer = ApproximateTimeSynchronizer(
@@ -119,11 +130,7 @@ class PointerController(Node):
 
         self.FPclient = FoundationPoseClient(url="http://lamb.mech.northwestern.edu:4242")
 
-        pkg_dir = Path(__file__).resolve().parent
-
-        self.map_path = pkg_dir / 'masks' / 'dronemask.png'
-
-        self.create_timer(1.0, self.timer_callback)
+        self.declare_parameter("mask_path", "")
 
     
     def image_callback(self, depth_msg, image_msg):
@@ -137,32 +144,21 @@ class PointerController(Node):
         except Exception as e:
             self.get_logger().error(f'Error converting images: {e}')
             return
-    
-    async def timer_callback(self):
-        if self.depth_image is None or self.color_image is None:
-            self.get_logger().info('Waiting for images...')
-            return
         
-        if self.processing_image:
-            return
-        
-        self.processing_image = True
-
-        task = asyncio.create_task(
-            self.FPclient.estimate(
-                rgb=self.color_image,
-                depth=self.depth_image,
-                intrinsics={"K": self.intrinsic_mat.tolist()},
-                mask_path=self.map_path,
-            )
+        output = self.FPclient.estimate(
+            rgb=self.color_image,
+            depth=self.depth_image,
+            intrinsics={"K": self.intrinsic_mat.tolist()},
+            mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
         )
 
-        result = await task
+        T = np.asarray(output["pose"], dtype=np.float64)     # (4,4) numpy array
+        Rmat = T[:3, :3]                               # rotation matrix
+        t = T[:3, 3]                                   # position / translation vector
 
-        self.get_logger().info(f'Pose estimation result: {result}')
+        # eul_xyz = R.from_matrix(Rmat).as_euler("xyz", degrees=True)  # roll, pitch, yaw in radians
 
-        self.processing_image = False
-
+        self.get_logger().info(f"t = {t}")
 
     def info_callback(self, info_msg):
         """
