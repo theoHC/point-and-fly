@@ -61,6 +61,9 @@ class FoundationPoseClient:
         }
 
         r = requests.post(self.url + "/pose", files=files, data=data, timeout=60)
+
+        if not r.ok:
+            raise RuntimeError(f"FP server {r.status_code}: {r.text[:500]}")
         return r.json()
 
 def rs_to_numpy(frame):
@@ -139,7 +142,8 @@ class PointerController(Node):
             return
         
         try:
-            self.depth_image = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+            depth_image_u16 = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
+            self.depth_image = depth_image_u16.astype(np.float32) * 0.001
             self.color_image = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
         except Exception as e:
             self.get_logger().error(f'Error converting images: {e}')
