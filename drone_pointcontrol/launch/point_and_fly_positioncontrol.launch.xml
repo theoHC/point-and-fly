@@ -1,0 +1,13 @@
+<launch>
+
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+        <arg name="ros_args" value="--ros-args --log-level WARN"/>
+        <arg name="align_depth.enable" value="true"/>
+
+        <arg name="rgb_camera.color_profile" value="640x480x30"/>
+        <arg name="depth_module.depth_profile" value="640x480x30"/>
+    </include>
+
+    <node pkg="drone_pointcontrol" exec="visioncontrol" on_exit='shutdown'/>
+
+</launch>
