@@ -1,5 +1,3 @@
-import math
-from pathlib import Path
 from cv_bridge import CvBridge
 from tf2_ros.transform_broadcaster import (
     TransformBroadcaster,
@@ -7,28 +5,21 @@ from tf2_ros.transform_broadcaster import (
 )
 from sensor_msgs.msg import CameraInfo, Image
 
-from tf2_geometry_msgs import do_transform_pose
-
-from tf2_ros import (
-    ConnectivityException, ExtrapolationException, LookupException
-)
-
 from scipy.spatial.transform import Rotation as R
 
-from geometry_msgs.msg import Point, Pose, PoseStamped, Quaternion, Transform
+from geometry_msgs.msg import Vector3, Quaternion
 
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 
-from scipy.spatial.transform import Rotation as R
-
 import numpy as np
+
+import cv2
 
 import json
 
 import requests
 
 import rclpy
-from rclpy import spin_once
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
@@ -65,6 +56,11 @@ class FoundationPoseClient:
         if not r.ok:
             raise RuntimeError(f"FP server {r.status_code}: {r.text[:500]}")
         return r.json()
+
+    def reset(self):
+        r = requests.post(self.url + "/reset", timeout=10)
+        if not r.ok:
+            raise RuntimeError(f"FP server {r.status_code}: {r.text[:500]}")
 
 def rs_to_numpy(frame):
     """Convert RealSense frame to NumPy array."""
@@ -124,7 +120,6 @@ class PointerController(Node):
         self.approximate_time_synchronizer.registerCallback(self.image_callback)
 
         self.intrinsic_mat = None
-        self.camera_frame_id = None
 
         self.depth_image = None
         self.color_image = None
@@ -132,8 +127,11 @@ class PointerController(Node):
         self.processing_image = False
 
         self.FPclient = FoundationPoseClient(url="http://lamb.mech.northwestern.edu:4242")
+        self.FPclient.reset()
 
         self.declare_parameter("mask_path", "")
+
+        self.tfb = TransformBroadcaster(self)
 
     
     def image_callback(self, depth_msg, image_msg):
@@ -144,11 +142,15 @@ class PointerController(Node):
         try:
             depth_image_u16 = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
             self.depth_image = depth_image_u16.astype(np.float32) * 0.001
-            self.color_image = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='bgr8')
+            self.color_image = self.bridge.imgmsg_to_cv2(image_msg, desired_encoding='rgb8')
         except Exception as e:
             self.get_logger().error(f'Error converting images: {e}')
             return
-        
+
+        depth_mm = (self.depth_image * 1000.0).astype(np.uint16)
+
+        cv2.imwrite("depth_raw_mm.png", depth_mm)
+
         output = self.FPclient.estimate(
             rgb=self.color_image,
             depth=self.depth_image,
@@ -160,7 +162,18 @@ class PointerController(Node):
         Rmat = T[:3, :3]                               # rotation matrix
         t = T[:3, 3]                                   # position / translation vector
 
-        # eul_xyz = R.from_matrix(Rmat).as_euler("xyz", degrees=True)  # roll, pitch, yaw in radians
+        # Convert t and rmat to ros tf
+        quat = R.from_matrix(Rmat).as_quat()  # (x, y, z, w) format
+
+        t_ros = Vector3(x=float(t[0]), y=float(t[1]), z=float(t[2]))
+        quat_ros = Quaternion(x=float(quat[0]), y=float(quat[1]), z=float(quat[2]), w=float(quat[3]))
+        transform = TransformStamped()
+        transform.header.stamp = self.get_clock().now().to_msg()
+        transform.header.frame_id = "camera_color_optical_frame"
+        transform.child_frame_id = "drone_pose"
+        transform.transform.translation = t_ros
+        transform.transform.rotation = quat_ros
+        self.tfb.sendTransform(transform)
 
         self.get_logger().info(f"t = {t}")
 
@@ -172,7 +185,6 @@ class PointerController(Node):
         """
         self.info_msg = info_msg
         self.intrinsic_mat = np.reshape(np.array(self.info_msg.k), (3, 3))
-        self.distortion = np.array(self.info_msg.d)
 
 def main(args=None):
     """User Node."""

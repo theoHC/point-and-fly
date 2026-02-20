@@ -12,5 +12,6 @@
         <param name="mask_path" value="$(find-pkg-share drone_pointcontrol)/masks/dronemask.png"/>
     </node>
 
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/droneposview.rviz" on_exit='shutdown'/>
 
 </launch>
