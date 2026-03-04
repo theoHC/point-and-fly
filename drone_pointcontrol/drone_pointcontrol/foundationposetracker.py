@@ -23,7 +23,8 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
+from rclpy.qos import (
+    DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy)
 
 class FoundationPoseClient:
     def __init__(self, url):
@@ -35,6 +36,7 @@ class FoundationPoseClient:
         depth,
         intrinsics,
         mask_path=None,
+        mask_img=None,
     ):
 
         files = {
@@ -81,40 +83,39 @@ class PointerController(Node):
 
         self.cbgroup = MutuallyExclusiveCallbackGroup()
 
-        qos = QoSProfile(
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1,
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,   # typical for images
-            durability=QoSDurabilityPolicy.VOLATILE,
+        image_qos = QoSProfile(
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
         )
-
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.bridge = CvBridge()
 
-        self.color_sub = self.create_subscription(
+        self.info_sub = Subscriber(
             CameraInfo,
             '/camera/camera/color/camera_info',
-            self.info_callback,
-            10
+            qos_profile=image_qos,
         )
 
         self.depth_sub = Subscriber(
             self,
             Image,
             '/camera/camera/aligned_depth_to_color/image_raw',
-            qos_profile=qos
+            qos_profile=image_qos
         )
-        self.image_sub = Subscriber(
+
+        self.color_sub = Subscriber(
             self,
             Image,
             '/camera/camera/color/image_raw',
-            qos_profile=qos
+            qos_profile=image_qos
         )
 
         self.approximate_time_synchronizer = ApproximateTimeSynchronizer(
-            [self.depth_sub, self.image_sub],
-            queue_size=10,
+            [self.depth_sub, self.color_sub, self.info_sub],
+            queue_size=1,
             slop=0.1
         )
         self.approximate_time_synchronizer.registerCallback(self.image_callback)
@@ -134,10 +135,8 @@ class PointerController(Node):
         self.tfb = TransformBroadcaster(self)
 
     
-    def image_callback(self, depth_msg, image_msg):
-        if self.intrinsic_mat is None:
-            self.get_logger().warn('Camera intrinsics not received yet.')
-            return
+    def image_callback(self, depth_msg, image_msg, info_msg):
+        self.info_callback(info_msg)
         
         try:
             depth_image_u16 = self.bridge.imgmsg_to_cv2(depth_msg, desired_encoding='passthrough')
@@ -174,8 +173,6 @@ class PointerController(Node):
         transform.transform.translation = t_ros
         transform.transform.rotation = quat_ros
         self.tfb.sendTransform(transform)
-
-        self.get_logger().info(f"t = {t}")
 
     def info_callback(self, info_msg):
         """

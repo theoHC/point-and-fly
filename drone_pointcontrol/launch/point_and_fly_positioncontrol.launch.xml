@@ -1,6 +1,8 @@
 <launch>
 
-    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
+    <arg name="firstup" default="True" description="Sets whether or not to launch rviz and the realsense node"/>
+
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var firstup)\' == \'True\'')">
         <arg name="ros_args" value="--ros-args --log-level WARN"/>
         <arg name="align_depth.enable" value="true"/>
 
@@ -12,6 +14,6 @@
         <param name="mask_path" value="$(find-pkg-share drone_pointcontrol)/masks/dronemask.png"/>
     </node>
 
-    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/droneposview.rviz" on_exit='shutdown'/>
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/droneposview.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')"/>
 
 </launch>

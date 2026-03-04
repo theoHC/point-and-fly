@@ -15,6 +15,7 @@ setup(
         (os.path.join('share', package_name, 'masks'), glob('masks/*')),
         (os.path.join('share', package_name, 'launch'), glob('launch/*')),
         (os.path.join('share', package_name, 'config'), glob('config/*')),
+        (os.path.join('share', package_name, 'models'), glob('models/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -30,6 +31,7 @@ setup(
     entry_points={
         'console_scripts': [
             'visioncontrol = drone_pointcontrol.foundationposetracker:main',
+            'yolotracking = drone_pointcontrol.yoloprecrop:main',
         ],
     },
 )
