@@ -116,14 +116,6 @@ class YoloCropNode(Node):
         self.declare_parameter("imgsz", 720)
         self.declare_parameter("device", "")  # e.g. "0" or "cpu"
 
-        self.declare_parameter("color_topic", "/camera/camera/color/image_raw")
-        self.declare_parameter("depth_topic", "/camera/camera/aligned_depth_to_color/image_raw")
-        self.declare_parameter("info_topic", "/camera/camera/color/camera_info")
-
-        self.declare_parameter("out_color_topic", "/cropped/color/image_raw")
-        self.declare_parameter("out_depth_topic", "/cropped/aligned_depth_to_color/image_raw")
-        self.declare_parameter("out_info_topic", "/cropped/camera_info")
-
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
             raise RuntimeError(f"Parameter 'model' must be set to a YOLO model path (e.g. *.pt) - currently '{model_path}'")
@@ -135,15 +127,6 @@ class YoloCropNode(Node):
         self.iou = float(self.get_parameter("iou").value)
         self.imgsz = int(self.get_parameter("imgsz").value)
         self.device = self.get_parameter("device").get_parameter_value().string_value or None
-
-        color_topic = self.get_parameter("color_topic").value
-        depth_topic = self.get_parameter("depth_topic").value
-        info_topic = self.get_parameter("info_topic").value
-
-        out_color_topic = self.get_parameter("out_color_topic").value
-        out_depth_topic = self.get_parameter("out_depth_topic").value
-        out_info_topic = self.get_parameter("out_info_topic").value
-
         # ---- YOLO ----
         self.model = YOLO(model_path)
         self.names = self.model.names if hasattr(self.model, "names") else {}
@@ -153,7 +136,7 @@ class YoloCropNode(Node):
         self.last_info: Optional[CameraInfo] = None
 
         # CameraInfo subscriber (not synced; cache latest)
-        self.info_sub = self.create_subscription(CameraInfo, info_topic, self._info_cb, qos_profile_sensor_data)
+        self.info_sub = self.create_subscription(CameraInfo, "/camera/camera/color/camera_info", self._info_cb, qos_profile_sensor_data)
 
         # QoS for color (BEST_EFFORT)
         image_qos = QoSProfile(
@@ -164,21 +147,16 @@ class YoloCropNode(Node):
         )
 
         # Synced color+depth
-        # self.color_fr_sub = self.create_subscription(Image, color_topic, self.color_callback, qos_profile=color_qos)
-        # self.depth_fr_sub = self.create_subscription(Image, depth_topic, self.depth_callback, qos_profile=depth_qos)
-        self.color_sub = Subscriber(self, Image, color_topic, qos_profile=image_qos)
-        self.depth_sub = Subscriber(self, Image, depth_topic, qos_profile=image_qos)
+        self.color_sub = Subscriber(self, Image, "/camera/camera/color/image_raw", qos_profile=image_qos)
+        self.depth_sub = Subscriber(self, Image, "/camera/camera/aligned_depth_to_color/image_raw", qos_profile=image_qos)
 
         self.sync = ApproximateTimeSynchronizer([self.color_sub, self.depth_sub], queue_size=1, slop=0.1)
         self.sync.registerCallback(self._synced_cb)
 
-        self.pub_color = self.create_publisher(Image, out_color_topic, image_qos)
-        self.pub_depth = self.create_publisher(Image, out_depth_topic, image_qos)
-        self.pub_info = self.create_publisher(CameraInfo, out_info_topic, image_qos)
+        self.pub_color = self.create_publisher(Image, "/cropped/color/image_raw", image_qos)
+        self.pub_depth = self.create_publisher(Image, "/cropped/aligned_depth_to_color/image_raw", image_qos)
+        self.pub_info = self.create_publisher(CameraInfo, "/cropped/camera_info", image_qos)
 
-        self.get_logger().info("yolo_crop_node started.")
-        self.get_logger().info(f"Subscribing to:\n  color={color_topic}\n  depth={depth_topic}\n  info={info_topic}")
-        self.get_logger().info(f"Publishing:\n  color={out_color_topic}\n  depth={out_depth_topic}\n  info={out_info_topic}")
 
         self.cx = 0
         self.cy = 0
@@ -195,11 +173,8 @@ class YoloCropNode(Node):
         self.last_info = msg
 
     def _synced_cb(self, color_msg: Image, depth_msg: Image):
-        self.get_logger().warn("Beep!")
-
         cs = color_msg.header.stamp.sec + 1e-9 * color_msg.header.stamp.nanosec
         ds = depth_msg.header.stamp.sec + 1e-9 * depth_msg.header.stamp.nanosec
-        self.get_logger().info(f"SYNC dt={cs-ds:+.4f}s")
         if self.last_info is None:
             self.get_logger().warn("No CameraInfo received yet; skipping frame.")
             return

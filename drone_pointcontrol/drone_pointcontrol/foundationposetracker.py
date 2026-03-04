@@ -44,6 +44,9 @@ class FoundationPoseClient:
             "depth" : ("depth.bin", depth.tobytes(), "application/octet-stream"),
         }
 
+        if mask_img is not None:
+            files["masknp"] = ("mask.bin", mask_img.tobytes(), "application/octet-stream")
+
         if mask_path is not None:
             files["mask"] = ("mask.png", open(mask_path, "rb"), "image/png")
 
@@ -52,6 +55,8 @@ class FoundationPoseClient:
             "rgb_shape": json.dumps(list(rgb.shape)),
             "depth_shape": json.dumps(list(depth.shape))
         }
+        if mask_img is not None:
+            data["mask_shape"] = json.dumps(list(mask_img.shape))
 
         r = requests.post(self.url + "/pose", files=files, data=data, timeout=60)
 
@@ -127,7 +132,10 @@ class PointerController(Node):
 
         self.processing_image = False
 
-        self.FPclient = FoundationPoseClient(url="http://lamb.mech.northwestern.edu:4242")
+        self.declare_parameter("server_url", "")
+        server_url = self.get_parameter("server_url").get_parameter_value().string_value
+
+        self.FPclient = FoundationPoseClient(url=server_url)
         self.FPclient.reset()
 
         self.declare_parameter("mask_path", "")
@@ -146,15 +154,21 @@ class PointerController(Node):
             self.get_logger().error(f'Error converting images: {e}')
             return
 
-        depth_mm = (self.depth_image * 1000.0).astype(np.uint16)
+        # depth_mm = (self.depth_image * 1000.0).astype(np.uint16)
 
-        cv2.imwrite("depth_raw_mm.png", depth_mm)
+        # cv2.imwrite("depth_raw_mm.png", depth_mm)
 
+        h, w = self.color_image.shape[:2]
+        mask = np.full((h, w), 255, dtype=np.uint8)
+
+        self.get_logger().info(f"Received synchronized images")
+        return
         output = self.FPclient.estimate(
             rgb=self.color_image,
             depth=self.depth_image,
             intrinsics={"K": self.intrinsic_mat.tolist()},
-            mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
+            # mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
+            mask_img=mask
         )
 
         T = np.asarray(output["pose"], dtype=np.float64)     # (4,4) numpy array
