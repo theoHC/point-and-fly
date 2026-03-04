@@ -30,8 +30,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'visioncontrol = drone_pointcontrol.foundationposetracker:main',
+            'visiontracking = drone_pointcontrol.foundationposetracker:main',
             'yolotracking = drone_pointcontrol.yoloprecrop:main',
+            'positioncontrol = drone_pointcontrol.drone_tfcontrol:main',
         ],
     },
 )

@@ -26,6 +26,8 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.qos import (
     DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy)
 
+from std_srvs.srv import Empty
+
 class FoundationPoseClient:
     def __init__(self, url):
         self.url = url.rstrip("/")
@@ -99,6 +101,7 @@ class PointerController(Node):
         self.bridge = CvBridge()
 
         self.info_sub = Subscriber(
+            self,
             CameraInfo,
             '/camera/camera/color/camera_info',
             qos_profile=image_qos,
@@ -134,11 +137,19 @@ class PointerController(Node):
 
         self.declare_parameter("server_url", "")
         server_url = self.get_parameter("server_url").get_parameter_value().string_value
+        self.get_logger().info(f"FP server URL: '{server_url}'")
 
         self.FPclient = FoundationPoseClient(url=server_url)
         self.FPclient.reset()
 
         self.declare_parameter("mask_path", "")
+        self.declare_parameter("use_mask_img", False)
+
+        self.create_service(
+            Empty,
+            'reset_pose',
+            self.reset_callback,
+            callback_group=self.cbgroup)
 
         self.tfb = TransformBroadcaster(self)
 
@@ -162,14 +173,21 @@ class PointerController(Node):
         mask = np.full((h, w), 255, dtype=np.uint8)
 
         self.get_logger().info(f"Received synchronized images")
-        return
-        output = self.FPclient.estimate(
-            rgb=self.color_image,
-            depth=self.depth_image,
-            intrinsics={"K": self.intrinsic_mat.tolist()},
-            # mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
-            mask_img=mask
-        )
+
+        if self.get_parameter("use_mask_img").get_parameter_value().bool_value:
+            output = self.FPclient.estimate(
+                rgb=self.color_image,
+                depth=self.depth_image,
+                intrinsics={"K": self.intrinsic_mat.tolist()},
+                mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
+            )
+        else:
+            output = self.FPclient.estimate(
+                rgb=self.color_image,
+                depth=self.depth_image,
+                intrinsics={"K": self.intrinsic_mat.tolist()},
+                mask_img=mask
+            )
 
         T = np.asarray(output["pose"], dtype=np.float64)     # (4,4) numpy array
         Rmat = T[:3, :3]                               # rotation matrix
@@ -196,6 +214,10 @@ class PointerController(Node):
         """
         self.info_msg = info_msg
         self.intrinsic_mat = np.reshape(np.array(self.info_msg.k), (3, 3))
+    
+    def reset_callback(self, _, response):
+        self.FPclient.reset()
+        return response
 
 def main(args=None):
     """User Node."""

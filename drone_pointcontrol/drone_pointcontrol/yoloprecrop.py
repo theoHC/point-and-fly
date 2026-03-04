@@ -173,8 +173,6 @@ class YoloCropNode(Node):
         self.last_info = msg
 
     def _synced_cb(self, color_msg: Image, depth_msg: Image):
-        cs = color_msg.header.stamp.sec + 1e-9 * color_msg.header.stamp.nanosec
-        ds = depth_msg.header.stamp.sec + 1e-9 * depth_msg.header.stamp.nanosec
         if self.last_info is None:
             self.get_logger().warn("No CameraInfo received yet; skipping frame.")
             return
