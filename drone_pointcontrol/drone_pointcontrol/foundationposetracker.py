@@ -172,8 +172,6 @@ class PointerController(Node):
         h, w = self.color_image.shape[:2]
         mask = np.full((h, w), 255, dtype=np.uint8)
 
-        self.get_logger().info(f"Received synchronized images")
-
         if self.get_parameter("use_mask_img").get_parameter_value().bool_value:
             output = self.FPclient.estimate(
                 rgb=self.color_image,

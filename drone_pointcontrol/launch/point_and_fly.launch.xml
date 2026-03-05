@@ -24,9 +24,16 @@
     </node>
 
     <node pkg="drone_pointcontrol" exec="positioncontrol" on_exit='shutdown'>
-        <param name="source_frame" value="camera_link"/>
-        <param name="target_frame" value="drone_pose"/>
+        <param name="source_frame" value="drone_pose"/>
+        <param name="target_frame" value="drone_target"/>
     </node>
+
+    <node
+        pkg="tf2_ros"
+        exec="static_transform_publisher"
+        name="static_tf_camera_offset"
+        args="1 0 0 0 0 0 camera_link drone_target"
+    />
 
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')">
     </node>
