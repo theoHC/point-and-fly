@@ -219,6 +219,8 @@ class YoloCropNode(Node):
             x1, y1, x2, y2 = map(int, xyxy[best_i])
             self.cx = (x1 + x2) // 2
             self.cy = (y1 + y2) // 2
+        else:
+            return  # no detections, skip publishing
 
         box = compute_centered_crop_box(W, H, self.cx, self.cy, self.crop_w, self.crop_h)
 
