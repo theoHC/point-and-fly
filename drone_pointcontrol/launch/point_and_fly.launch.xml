@@ -25,7 +25,7 @@
     </node>
 
     <node pkg="drone_pointcontrol" exec="positioncontrol">
-        <param name="source_frame" value="drone_pose"/>
+        <param name="drone_frame" value="drone_pose"/>
         <param name="target_frame" value="drone_target"/>
         <param name="use_drone" value="$(var use_drone)"/>
     </node>

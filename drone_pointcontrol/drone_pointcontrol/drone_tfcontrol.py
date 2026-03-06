@@ -2,12 +2,12 @@
 """
 tf_diff_on_source_update.py
 
-Compute and print the relative transform between target_frame and source_frame
-whenever the source_frame is updated in /tf or /tf_static.
+Compute and print the relative transform between target_frame and drone_frame
+whenever the drone_frame is updated in /tf or /tf_static.
 
 Usage:
   ros2 run <your_pkg> tf_diff_on_source_update --ros-args \
-    -p source_frame:=base_link -p target_frame:=map -p timeout_sec:=0.05
+    -p drone_frame:=base_link -p target_frame:=map -p timeout_sec:=0.05
 """
 
 from typing import Set
@@ -32,14 +32,18 @@ class TfDiffOnSourceUpdate(Node):
     def __init__(self):
         super().__init__("tf_diff_on_source_update")
 
-        self.declare_parameter("source_frame", "world")
-        self.declare_parameter("target_frame", "base_link")
+        self.declare_parameter("drone_frame", "drone_pose")
+        self.declare_parameter("target_frame", "target_pose")
         self.declare_parameter("timeout_sec", 0.2)  # how long to wait for lookup on each update
         self.declare_parameter("use_tf_static", True)
         self.declare_parameter("use_drone", True)  # if True, node will shutdown if no updates received for a while
+
+        self.declare_parameter("kp_pos", 1.0)
+        self.declare_parameter("kp_yaw", 1.0)
+
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
 
-        self.source_frame = self.get_parameter("source_frame").get_parameter_value().string_value
+        self.drone_frame = self.get_parameter("drone_frame").get_parameter_value().string_value
         self.target_frame = self.get_parameter("target_frame").get_parameter_value().string_value
         self.timeout_sec = float(self.get_parameter("timeout_sec").value)
         self.use_tf_static = bool(self.get_parameter("use_tf_static").value)
@@ -58,11 +62,11 @@ class TfDiffOnSourceUpdate(Node):
 
 
         # Track which frame_ids in each message correspond to the source frame
-        self._source_ids: Set[str] = {self.source_frame, self._normalize(self.source_frame)}
+        self._source_ids: Set[str] = {self.drone_frame, self._normalize(self.drone_frame)}
 
         self.get_logger().info(
-            f"Listening for updates to source_frame='{self.source_frame}'. "
-            f"On update, computing transform: {self.target_frame} -> {self.source_frame}"
+            f"Listening for updates to drone_frame='{self.drone_frame}'. "
+            f"On update, computing transform: {self.target_frame} -> {self.drone_frame}"
         )
 
         self.last_update_time = self.get_clock().now()
@@ -112,7 +116,7 @@ class TfDiffOnSourceUpdate(Node):
             # Passing Time() gives "latest"
             t_latest: TransformStamped = self.tf_buffer.lookup_transform(
                 self._normalize(self.target_frame),
-                self._normalize(self.source_frame),
+                self._normalize(self.drone_frame),
                 rclpy.time.Time(),
                 timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
             )
@@ -121,7 +125,7 @@ class TfDiffOnSourceUpdate(Node):
                 tf2_ros.ExtrapolationException,
                 tf2_ros.TimeoutException) as ex:
             self.get_logger().warn(
-                f"TF lookup failed for {self.target_frame} -> {self.source_frame}: {type(ex).__name__}: {ex}"
+                f"TF lookup failed for {self.drone_frame} -> {self.target_frame}: {type(ex).__name__}: {ex}"
             )
             return
 
@@ -134,8 +138,35 @@ class TfDiffOnSourceUpdate(Node):
         if self.drone_acquired and not self.calibrated:
             self.get_logger().info("Checking drone forward direction...")
             self.calibrated = self.check_drone_forward(t_latest)
+        
+        if self.drone_acquired and self.calibrated:
+            self.do_position_control(t_latest)
 
-    def check_drone_forward(self, t_start):
+    def do_position_control(self, t_latest: TransformStamped):
+        kp_pos = self.get_parameter("kp_pos").get_parameter_value().double_value
+        kp_yaw = self.get_parameter("kp_yaw").get_parameter_value().double_value
+
+        forward_error = self.x_forward * t_latest.transform.translation.x + self.x_sideways * t_latest.transform.translation.z
+        sideways_error = self.x_sideways * t_latest.transform.translation.x - self.x_forward * t_latest.transform.translation.z
+        vertical_error = t_latest.transform.translation.y
+        yaw_error = Rotation.from_quat([
+            t_latest.transform.rotation.x,
+            t_latest.transform.rotation.y,
+            t_latest.transform.rotation.z,
+            t_latest.transform.rotation.w
+        ]).as_euler('xyz', degrees=True)[2]  # Yaw in degrees
+
+        # self.get_logger().info(f"Position delta: x={t_latest.transform.translation.x:.3f}, y={t_latest.transform.translation.y:.3f}, z={t_latest.transform.translation.z:.3f} \
+        #                        | Forward error: {forward_error:.3f}, Sideways error: {sideways_error:.3f}, Yaw error: {yaw_error:.3f}")
+
+        forward_speed = clamp(int(kp_pos * forward_error), -50, 50)
+        sideways_speed = clamp(int(kp_pos * sideways_error), -50, 50)
+        vertical_speed = clamp(int(kp_pos * vertical_error), -50, 50)
+        yaw_speed = clamp(int(kp_yaw * yaw_error), -50, 50)
+
+        pass
+
+    def check_drone_forward(self, t_start: TransformStamped) -> bool:
         #Figure out which of x or z is forward for the drone by moving it and then checking which tf change is greater.
         t_start.child_frame_id = "drone_calib_start"
         t_start.header.stamp = self.get_clock().now().to_msg()
@@ -157,7 +188,7 @@ class TfDiffOnSourceUpdate(Node):
         while not foundTransform and (self.get_clock().now() - startedwaiting < rclpy.duration.Duration(seconds=5.0)):
             try:
                 t_end = self.tf_buffer.lookup_transform(
-                    self._normalize(self.source_frame),
+                    self._normalize(self.drone_frame),
                     "drone_calib_start",
                     rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
@@ -178,7 +209,7 @@ class TfDiffOnSourceUpdate(Node):
         dx = t_end.transform.translation.x
         dz = t_end.transform.translation.z
 
-        self.get_logger().info(f"Calibration movement: {t_end}")
+        self.get_logger().info(f"Calibration movement: dx={dx=:.3f}, dz={dz=:.3f}")
 
         if abs(dx) > abs(dz):
             self.x_foward = dx / abs(dx)
@@ -213,6 +244,9 @@ class TfDiffOnSourceUpdate(Node):
         if self.use_drone:
             self.tello.land()
 
+
+def clamp(value, min_value, max_value):
+    return max(min_value, min(value, max_value))
 
 def main():
     rclpy.init()
