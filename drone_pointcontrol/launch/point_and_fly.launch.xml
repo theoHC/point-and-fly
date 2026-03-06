@@ -1,6 +1,7 @@
 <launch>
 
     <arg name="firstup" default="True" description="Sets whether or not to launch rviz and the realsense node"/>
+    <arg name="use_drone" default="False" description="Sets whether to issue control singals to the drone"/>
 
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var firstup)\' == \'True\'')">
         <arg name="ros_args" value="--ros-args --log-level WARN"/>
@@ -26,6 +27,7 @@
     <node pkg="drone_pointcontrol" exec="positioncontrol" on_exit='shutdown'>
         <param name="source_frame" value="drone_pose"/>
         <param name="target_frame" value="drone_target"/>
+        <param name="use_drone" value="$(var use_drone)"/>
     </node>
 
     <node
