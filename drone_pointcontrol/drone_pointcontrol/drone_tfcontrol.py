@@ -17,13 +17,16 @@ from scipy.spatial.transform import Rotation
 
 import rclpy
 from rclpy.node import Node
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster
+from std_srvs.srv import Empty
 
 import tf2_ros
 
+from time import sleep
 
 class TfDiffOnSourceUpdate(Node):
     def __init__(self):
@@ -31,7 +34,7 @@ class TfDiffOnSourceUpdate(Node):
 
         self.declare_parameter("source_frame", "world")
         self.declare_parameter("target_frame", "base_link")
-        self.declare_parameter("timeout_sec", 0.1)  # how long to wait for lookup on each update
+        self.declare_parameter("timeout_sec", 0.2)  # how long to wait for lookup on each update
         self.declare_parameter("use_tf_static", True)
         self.declare_parameter("use_drone", True)  # if True, node will shutdown if no updates received for a while
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
@@ -52,7 +55,6 @@ class TfDiffOnSourceUpdate(Node):
         self.tf_static_sub = None
         if self.use_tf_static:
             self.tf_static_sub = self.create_subscription(TFMessage, "/tf_static", self._on_tf_msg, 10)
-
 
 
         # Track which frame_ids in each message correspond to the source frame
@@ -77,7 +79,15 @@ class TfDiffOnSourceUpdate(Node):
         self.x_forward = 1.0
         self.x_sideways = 0.0
 
+        self.cbgroup = MutuallyExclusiveCallbackGroup()
+
         self.timer = self.create_timer(0.1, self.timer_callback)
+
+        self.create_service(
+            Empty,
+            'reset_calib',
+            self.reset_calib_cb,
+            callback_group=self.cbgroup)
 
     @staticmethod
     def _normalize(frame: str) -> str:
@@ -100,7 +110,7 @@ class TfDiffOnSourceUpdate(Node):
         # Lookup the relative transform target -> source at "latest available"
         try:
             # Passing Time() gives "latest"
-            t: TransformStamped = self.tf_buffer.lookup_transform(
+            t_latest: TransformStamped = self.tf_buffer.lookup_transform(
                 self._normalize(self.target_frame),
                 self._normalize(self.source_frame),
                 rclpy.time.Time(),
@@ -116,61 +126,76 @@ class TfDiffOnSourceUpdate(Node):
             return
 
         self.last_update_time = self.get_clock().now()
+
         if not self.drone_acquired:
             self.drone_acquired = True
             self.get_logger().info("Drone acquired.")
 
-    def check_drone_forward(self):
+        if self.drone_acquired and not self.calibrated:
+            self.get_logger().info("Checking drone forward direction...")
+            self.calibrated = self.check_drone_forward(t_latest)
+
+    def check_drone_forward(self, t_start):
         #Figure out which of x or z is forward for the drone by moving it and then checking which tf change is greater.
-        if not self.use_drone:
-            self.get_logger().info("Calibration hit.")
-            return
+        t_start.child_frame_id = "drone_calib_start"
+        t_start.header.stamp = self.get_clock().now().to_msg()
 
-        if not self.drone_acquired:
-            self.get_logger().warn("Cannot check drone forward direction because drone not acquired yet.")
-            return
+        self.tf_broadcaster.sendTransform(t_start)
 
-        if self.get_parameter("use_drone").get_parameter_value().bool_value:
-            t_start: TransformStamped = self.tf_buffer.lookup_transform(
-                self._normalize(self.target_frame),
-                self._normalize(self.source_frame),
-                rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
-            )
-            t_start.child_frame_id = "drone_calib_start"
-            t_start.header.stamp = self.get_clock().now().to_msg()
+        if self.use_drone:
             self.tello.set_speed(20)
             self.tello.move_forward(20)
+        else:
+            self.get_logger().info(f"Simulating drone forward movement by waiting 2 seconds...")
+            sleep(2.0)
 
-            t_end: TransformStamped = self.tf_buffer.lookup_transform(
-                self._normalize(self.target_frame),
-                "drone_calib_start",
-                rclpy.time.Time(),
-                timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
-            )
+        t_end: TransformStamped = TransformStamped()
 
-            dx = t_end.transform.translation.x
-            dz = t_end.transform.translation.z
+        startedwaiting = self.get_clock().now()
+        foundTransform = False
+        
+        while not foundTransform and (self.get_clock().now() - startedwaiting < rclpy.duration.Duration(seconds=5.0)):
+            try:
+                t_end = self.tf_buffer.lookup_transform(
+                    self._normalize(self.source_frame),
+                    "drone_calib_start",
+                    rclpy.time.Time(),
+                    timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
+                )
+                foundTransform = True
+            except Exception as e:
+                rclpy.spin_once(self, timeout_sec=0.1)
 
-            if abs(dx) > abs(dz):
-                self.x_foward = dx / abs(dx)
-                self.x_sideways = 0
-            else:
-                self.x_forward = 0
-                self.x_sideways = dz / abs(dz)
-            
-            self.get_logger().info(f"Calibrated drone forward direction: x_forward={self.x_forward}, x_sideways={self.x_sideways}")
+        if not foundTransform:
+            self.get_logger().error("Failed to calibrate; trying again.")
+
+            if self.use_drone:
+                self.tello.set_speed(20)
+                self.tello.move_forward(20)
+
+            return False
+
+        dx = t_end.transform.translation.x
+        dz = t_end.transform.translation.z
+
+        self.get_logger().info(f"Calibration movement: {t_end}")
+
+        if abs(dx) > abs(dz):
+            self.x_foward = dx / abs(dx)
+            self.x_sideways = 0
+        else:
+            self.x_forward = 0
+            self.x_sideways = dz / abs(dz)
+        
+        self.get_logger().info(f"Calibrated drone forward direction: x_forward={self.x_forward}, x_sideways={self.x_sideways}")
+
+        return True
 
     def timer_callback(self):
         timeout_duration = 0.5 if self.drone_acquired else 5.0
 
         if not self.drone_acquired and self.use_drone:
             self.tello.send_rc_control(0, 0, 0, 0)
-
-        if self.drone_acquired and not self.calibrated:
-            self.get_logger().info("Checking drone forward direction...")
-            self.check_drone_forward()
-            self.calibrated = True
 
         if (self.get_clock().now() - self.last_update_time > rclpy.duration.Duration(seconds=timeout_duration)
             and self.get_parameter("use_drone").get_parameter_value().bool_value):
@@ -179,6 +204,10 @@ class TfDiffOnSourceUpdate(Node):
             self.destroy_node()
             rclpy.shutdown()
         pass
+
+    def reset_calib_cb(self, _, response):
+        self.calibrated = False
+        return response
 
     def shutdown(self):
         if self.use_drone:

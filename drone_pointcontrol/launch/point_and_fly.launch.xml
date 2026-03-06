@@ -24,7 +24,7 @@
         <remap from="/camera/camera/color/camera_info" to="/cropped/camera_info"/>
     </node>
 
-    <node pkg="drone_pointcontrol" exec="positioncontrol" on_exit='shutdown'>
+    <node pkg="drone_pointcontrol" exec="positioncontrol">
         <param name="source_frame" value="drone_pose"/>
         <param name="target_frame" value="drone_target"/>
         <param name="use_drone" value="$(var use_drone)"/>
