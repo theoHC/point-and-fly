@@ -161,8 +161,6 @@ class TfDiffOnSourceUpdate(Node):
             
             self.get_logger().info(f"Calibrated drone forward direction: x_forward={self.x_forward}, x_sideways={self.x_sideways}")
 
-
-
     def timer_callback(self):
         timeout_duration = 0.5 if self.drone_acquired else 5.0
 
