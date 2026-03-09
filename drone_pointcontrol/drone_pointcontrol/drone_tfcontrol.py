@@ -38,8 +38,8 @@ class TfDiffOnSourceUpdate(Node):
         self.declare_parameter("use_tf_static", True)
         self.declare_parameter("use_drone", True)  # if True, node will shutdown if no updates received for a while
 
-        self.declare_parameter("kp_pos", 1.0)
-        self.declare_parameter("kp_yaw", 1.0)
+        self.declare_parameter("kp_pos", 5.0)
+        self.declare_parameter("kp_yaw", 5.0)
 
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
 
@@ -92,6 +92,17 @@ class TfDiffOnSourceUpdate(Node):
             'reset_calib',
             self.reset_calib_cb,
             callback_group=self.cbgroup)
+        
+        self.create_service(
+            Empty,
+            'land_drone',
+            self.land_drone_cb,
+            callback_group=self.cbgroup)
+
+        self.drone_forward = 0.0
+        self.drone_right = 0.0
+        self.drone_up = 0.0
+        self.drone_yaw = 0.0
 
     @staticmethod
     def _normalize(frame: str) -> str:
@@ -159,12 +170,12 @@ class TfDiffOnSourceUpdate(Node):
         # self.get_logger().info(f"Position delta: x={t_latest.transform.translation.x:.3f}, y={t_latest.transform.translation.y:.3f}, z={t_latest.transform.translation.z:.3f} \
         #                        | Forward error: {forward_error:.3f}, Sideways error: {sideways_error:.3f}, Yaw error: {yaw_error:.3f}")
 
-        forward_speed = clamp(int(kp_pos * forward_error), -50, 50)
-        sideways_speed = clamp(int(kp_pos * sideways_error), -50, 50)
-        vertical_speed = clamp(int(kp_pos * vertical_error), -50, 50)
-        yaw_speed = clamp(int(kp_yaw * yaw_error), -50, 50)
+        forward_speed = -1 * kp_pos * forward_error
+        sideways_speed = -1 *  kp_pos * sideways_error
+        vertical_speed = -1 * kp_pos * vertical_error
+        yaw_speed = -1 * kp_yaw * yaw_error
 
-        pass
+        self.set_rc_joystick(forward_speed, sideways_speed, vertical_speed, yaw_speed)
 
     def check_drone_forward(self, t_start: TransformStamped) -> bool:
         #Figure out which of x or z is forward for the drone by moving it and then checking which tf change is greater.
@@ -193,7 +204,13 @@ class TfDiffOnSourceUpdate(Node):
                     rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
                 )
-                foundTransform = True
+
+                transform_distance = ((t_end.transform.translation.x - t_start.transform.translation.x)**2 + \
+                                     (t_end.transform.translation.y - t_start.transform.translation.y)**2 + \
+                                     (t_end.transform.translation.z - t_start.transform.translation.z)**2) ** 0.5
+
+                if transform_distance > .2:  # Check if the transform has changed significantly to consider it valid
+                    foundTransform = True
             except Exception as e:
                 rclpy.spin_once(self, timeout_sec=0.1)
 
@@ -223,27 +240,31 @@ class TfDiffOnSourceUpdate(Node):
         return True
 
     def timer_callback(self):
-        timeout_duration = 0.5 if self.drone_acquired else 5.0
-
-        if not self.drone_acquired and self.use_drone:
-            self.tello.send_rc_control(0, 0, 0, 0)
-
-        if (self.get_clock().now() - self.last_update_time > rclpy.duration.Duration(seconds=timeout_duration)
-            and self.get_parameter("use_drone").get_parameter_value().bool_value):
-            self.get_logger().info("No updates received for a while, shutting down.")
-            self.shutdown()
-            self.destroy_node()
-            rclpy.shutdown()
+        if self.use_drone :
+            self.tello.send_rc_control(self.drone_forward,
+                                    self.drone_right,
+                                    self.drone_up,
+                                    self.drone_yaw)
         pass
 
     def reset_calib_cb(self, _, response):
         self.calibrated = False
         return response
 
+    def land_drone_cb(self, _, response):
+        if self.use_drone:
+            self.tello.land()
+        return response
+
     def shutdown(self):
         if self.use_drone:
             self.tello.land()
 
+    def set_rc_joystick(self, forward: float, right: float, up: float, yaw: float):
+        self.drone_forward = clamp(int(forward), -50, 50)
+        self.drone_right = clamp(int(right), -50, 50)
+        self.drone_up = clamp(int(up), -50, 50)
+        self.drone_yaw = clamp(int(yaw), -50, 50)
 
 def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value))

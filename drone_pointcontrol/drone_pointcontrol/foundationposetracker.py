@@ -86,7 +86,7 @@ def rs_get_K(intr):
 
 class PointerController(Node):
     def __init__(self):
-        super().__init__('pointer_controller')
+        super().__init__('pose_estimator')
 
         self.cbgroup = MutuallyExclusiveCallbackGroup()
 

@@ -15,9 +15,12 @@
     </node>
 
     <node pkg="drone_pointcontrol" exec="visiontracking" on_exit='shutdown'>
-        <param name="mask_path" value="$(find-pkg-share drone_pointcontrol)/masks/dronemask.png"/>
         <param name="server_url" value="http://lamb.mech.northwestern.edu:4242"/>
-        <param name="use_mask_img" value="True"/>
+        <param name="use_mask_img" value="False"/>
+
+        <remap from="/camera/camera/aligned_depth_to_color/image_raw" to="/cropped/aligned_depth_to_color/image_raw"/>
+        <remap from="/camera/camera/color/image_raw" to="/cropped/color/image_raw"/>
+        <remap from="/camera/camera/color/camera_info" to="/cropped/camera_info"/>
     </node>
 
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')">
