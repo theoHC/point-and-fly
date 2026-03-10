@@ -21,7 +21,7 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
 from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
-from tf2_ros import TransformBroadcaster
+from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from std_srvs.srv import Empty
 
 import tf2_ros
@@ -84,6 +84,7 @@ class TfDiffOnSourceUpdate(Node):
             self.tello.send_rc_control(0, 0, 0, 0)
         
         self.tf_broadcaster = TransformBroadcaster(self)
+        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
 
         self.calibrated = False
         self.is_calibrating = False
@@ -191,7 +192,7 @@ class TfDiffOnSourceUpdate(Node):
         t_start.child_frame_id = "drone_calib_start"
         t_start.header.stamp = self.get_clock().now().to_msg()
 
-        self.tf_broadcaster.sendTransform(t_start)
+        self.static_tf_broadcaster.sendTransform(t_start)
 
         if self.use_drone:
             self.tello.move_forward(20)
@@ -219,6 +220,7 @@ class TfDiffOnSourceUpdate(Node):
                 if transform_distance > .2:  # Check if the transform has changed significantly to consider it valid
                     foundTransform = True
             except Exception as e:
+                self.get_logger().warn(f"Waiting for calibration transform... {type(e).__name__}: {e}")
                 rclpy.spin_once(self, timeout_sec=0.1)
 
         if not foundTransform:
@@ -232,7 +234,7 @@ class TfDiffOnSourceUpdate(Node):
         self.get_logger().info(f"Calibration movement: dx={dx=:.3f}, dz={dz=:.3f}")
 
         if abs(dx) > abs(dz):
-            self.x_foward = dx / abs(dx)
+            self.x_forward = dx / abs(dx)
             self.x_sideways = 0
         else:
             self.x_forward = 0
