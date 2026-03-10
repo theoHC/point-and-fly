@@ -192,7 +192,7 @@ class TfDiffOnSourceUpdate(Node):
         t_start.child_frame_id = "drone_calib_start"
         t_start.header.stamp = self.get_clock().now().to_msg()
 
-        self.static_tf_broadcaster.sendTransform(t_start)
+        self.tf_broadcaster.sendTransform(t_start)
 
         if self.use_drone:
             self.tello.move_forward(20)
@@ -217,10 +217,11 @@ class TfDiffOnSourceUpdate(Node):
                 transform_distance = ((t_end.transform.translation.x)**2 + \
                                      (t_end.transform.translation.z)**2) ** 0.5
 
-                if transform_distance > .2:  # Check if the transform has changed significantly to consider it valid
+                if transform_distance > .15:  # Check if the transform has changed significantly to consider it valid
                     foundTransform = True
             except Exception as e:
                 self.get_logger().warn(f"Waiting for calibration transform... {type(e).__name__}: {e}")
+                self.tf_broadcaster.sendTransform(t_start)
                 rclpy.spin_once(self, timeout_sec=0.1)
 
         if not foundTransform:
