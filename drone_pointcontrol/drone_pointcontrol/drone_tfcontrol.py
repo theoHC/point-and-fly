@@ -206,6 +206,7 @@ class TfDiffOnSourceUpdate(Node):
         foundTransform = False
         
         while not foundTransform and (self.get_clock().now() - startedwaiting < rclpy.duration.Duration(seconds=5.0)):
+            self.tf_broadcaster.sendTransform(t_start)
             try:
                 t_end = self.tf_buffer.lookup_transform(
                     self._normalize(self.drone_frame),
@@ -221,11 +222,11 @@ class TfDiffOnSourceUpdate(Node):
                     foundTransform = True
             except Exception as e:
                 self.get_logger().warn(f"Waiting for calibration transform... {type(e).__name__}: {e}")
-                self.tf_broadcaster.sendTransform(t_start)
                 rclpy.spin_once(self, timeout_sec=0.1)
 
         if not foundTransform:
             self.get_logger().error("Failed to calibrate; trying again.")
+            self.tello.move_back(20)
             self.is_calibrating = False
             return False
 
