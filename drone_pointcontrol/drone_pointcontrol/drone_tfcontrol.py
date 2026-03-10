@@ -40,7 +40,7 @@ class TfDiffOnSourceUpdate(Node):
 
         self.declare_parameter("calib_stabilize_time_sec", 2.0)  # how long to wait between acquisition and calibration
 
-        self.declare_parameter("kp_pos", 5.0)
+        self.declare_parameter("kp_pos", 10.0)
         self.declare_parameter("kp_yaw", 5.0)
 
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
@@ -95,7 +95,7 @@ class TfDiffOnSourceUpdate(Node):
 
         self.create_service(
             Empty,
-            'reset_calib',
+            '~/reset_calib',
             self.reset_calib_cb,
             callback_group=self.cbgroup)
         
@@ -178,13 +178,13 @@ class TfDiffOnSourceUpdate(Node):
 
         # self.get_logger().info(f"Position delta: x={t_latest.transform.translation.x:.3f}, y={t_latest.transform.translation.y:.3f}, z={t_latest.transform.translation.z:.3f} \
         #                        | Forward error: {forward_error:.3f}, Sideways error: {sideways_error:.3f}, Yaw error: {yaw_error:.3f}")
-
+        self.get_logger().info(f"Errors | Forward: {forward_error:.3f}, Sideways: {sideways_error:.3f}, Vertical: {vertical_error:.3f}, Yaw: {yaw_error:.3f}")
         forward_speed = -1 * kp_pos * forward_error
         sideways_speed = -1 *  kp_pos * sideways_error
         vertical_speed = -1 * kp_pos * vertical_error
         yaw_speed = -1 * kp_yaw * yaw_error
 
-        self.set_rc_joystick(forward_speed, sideways_speed, vertical_speed, yaw_speed)
+        self.set_rc_joystick(forward_speed, sideways_speed, vertical_speed, 0)
 
     def check_drone_forward(self, t_start: TransformStamped) -> bool:
         self.is_calibrating = True
@@ -206,6 +206,7 @@ class TfDiffOnSourceUpdate(Node):
         foundTransform = False
         
         while not foundTransform and (self.get_clock().now() - startedwaiting < rclpy.duration.Duration(seconds=5.0)):
+            t_start.header.stamp = self.get_clock().now().to_msg()
             self.tf_broadcaster.sendTransform(t_start)
             try:
                 t_end = self.tf_buffer.lookup_transform(
@@ -222,7 +223,8 @@ class TfDiffOnSourceUpdate(Node):
                     foundTransform = True
             except Exception as e:
                 self.get_logger().warn(f"Waiting for calibration transform... {type(e).__name__}: {e}")
-                rclpy.spin_once(self, timeout_sec=0.1)
+            
+            rclpy.spin_once(self, timeout_sec=0.1)
 
         if not foundTransform:
             self.get_logger().error("Failed to calibrate; trying again.")
@@ -250,10 +252,10 @@ class TfDiffOnSourceUpdate(Node):
         if self.is_calibrating:
             return
         if self.use_drone :
-            self.tello.send_rc_control(int(self.drone_right),
-                                    int(self.drone_forward),
-                                    int(self.drone_up),
-                                    0)
+            self.tello.send_rc_control(round(self.drone_right),
+                                    round(self.drone_forward),
+                                    round(self.drone_up),
+                                    round(self.drone_yaw))
         pass
 
     def reset_calib_cb(self, _, response):
@@ -270,10 +272,10 @@ class TfDiffOnSourceUpdate(Node):
             self.tello.land()
 
     def set_rc_joystick(self, forward: float, right: float, up: float, yaw: float):
-        self.drone_forward = clamp(int(forward), -50, 50)
-        self.drone_right = clamp(int(right), -50, 50)
-        self.drone_up = clamp(int(up), -50, 50)
-        self.drone_yaw = clamp(int(yaw), -50, 50)
+        self.drone_forward = clamp(forward, -50, 50)
+        self.drone_right = clamp(right, -50, 50)
+        self.drone_up = clamp(up, -50, 50)
+        self.drone_yaw = clamp(yaw, -50, 50)
 
 def clamp(value, min_value, max_value):
     return max(min_value, min(value, max_value))
