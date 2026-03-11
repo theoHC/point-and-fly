@@ -5,6 +5,8 @@ from tf2_ros.transform_broadcaster import (
 )
 from sensor_msgs.msg import CameraInfo, Image
 
+from std_msgs.msg import Empty
+
 from scipy.spatial.transform import Rotation as R
 
 from geometry_msgs.msg import Vector3, Quaternion
@@ -12,8 +14,6 @@ from geometry_msgs.msg import Vector3, Quaternion
 from message_filters import ApproximateTimeSynchronizer, Subscriber
 
 import numpy as np
-
-import cv2
 
 import json
 
@@ -130,6 +130,8 @@ class FPTracker(Node):
         )
         self.approximate_time_synchronizer.registerCallback(self.image_callback)
 
+        self.acquired_publisher = self.create_publisher(Empty, '/drone_acquired', 10)
+
         self.intrinsic_mat = None
 
         self.depth_image = None
@@ -155,6 +157,11 @@ class FPTracker(Node):
 
         self.tfb = TransformBroadcaster(self)
 
+        self.declare_parameter("stabilizing_frames", 10)
+        self.stabilizing_frames = int(self.get_parameter("stabilizing_frames").get_parameter_value().integer_value)
+        self.acquired = False
+        self.score = -1.0
+
     
     def image_callback(self, depth_msg, image_msg, info_msg):
         self.info_callback(info_msg)
@@ -174,19 +181,25 @@ class FPTracker(Node):
         h, w = self.color_image.shape[:2]
         mask = np.full((h, w), 255, dtype=np.uint8)
 
+        rescore = False
+        if not self.acquired and self.stabilizing_frames <= 0:
+            rescore = True
+
         if self.get_parameter("use_mask_img").get_parameter_value().bool_value:
             output = self.FPclient.estimate(
                 rgb=self.color_image,
                 depth=self.depth_image,
                 intrinsics={"K": self.intrinsic_mat.tolist()},
                 mask_path=self.get_parameter("mask_path").get_parameter_value().string_value,
+                rescore=rescore
             )
         else:
             output = self.FPclient.estimate(
                 rgb=self.color_image,
                 depth=self.depth_image,
                 intrinsics={"K": self.intrinsic_mat.tolist()},
-                mask_img=mask
+                mask_img=mask,
+                rescore=rescore
             )
 
         T = np.asarray(output["pose"], dtype=np.float64)     # (4,4) numpy array
@@ -195,6 +208,21 @@ class FPTracker(Node):
 
         # Convert t and rmat to ros tf
         quat = R.from_matrix(Rmat).as_quat()  # (x, y, z, w) format
+
+        outscore = float(output["score"])
+        if outscore != -1.0:
+            self.score = outscore
+
+            if self.stabilizing_frames <= 0 and not self.acquired:
+                self.acquired_publisher.publish(Empty())
+                self.acquired = True
+
+        if self.stabilizing_frames > 0 and self.score >= 110:
+            self.stabilizing_frames -= 1 if self.score < 110 else 0
+
+        if self.score < 110:
+            self.get_logger().info(f"Pose score {self.score:.2f} below threshold, not publishing transform.")
+            return
 
         t_ros = Vector3(x=float(t[0]), y=float(t[1]), z=float(t[2]))
         quat_ros = Quaternion(x=float(quat[0]), y=float(quat[1]), z=float(quat[2]), w=float(quat[3]))
@@ -205,8 +233,6 @@ class FPTracker(Node):
         transform.transform.translation = t_ros
         transform.transform.rotation = quat_ros
         self.tfb.sendTransform(transform)
-
-        self.get_logger().info(f"Pose score:{output['score']:.4f}")
 
     def info_callback(self, info_msg):
         """

@@ -110,6 +110,13 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_up = 0.0
         self.drone_yaw = 0.0
 
+        self.create_subscription(
+            Empty,
+            '/drone_acquired',
+            self.acquired_callback,
+            10,
+            callback_group=self.cbgroup)
+
     @staticmethod
     def _normalize(frame: str) -> str:
         # tf2 often uses frame ids without leading '/'
@@ -146,16 +153,7 @@ class TfDiffOnSourceUpdate(Node):
             )
             return
 
-        self.last_update_time = self.get_clock().now()
-
-        if not self.drone_acquired:
-            self.drone_acquired = True
-            self.acquired_time = self.get_clock().now()
-            self.get_logger().info("Drone acquired.")
-
-        if self.drone_acquired and not self.calibrated and \
-            (self.get_clock().now() - self.acquired_time > 
-             rclpy.duration.Duration(seconds=self.get_parameter("calib_stabilize_time_sec").get_parameter_value().double_value)):
+        if self.drone_acquired and not self.calibrated and self.use_drone:
             self.get_logger().info("Checking drone forward direction...")
             self.calibrated = self.check_drone_forward(t_latest)
         
@@ -258,13 +256,16 @@ class TfDiffOnSourceUpdate(Node):
                                     round(self.drone_yaw))
         pass
 
+    def acquired_callback(self, msg):
+        if not self.drone_acquired:
+            self.drone_acquired = True
+
     def reset_calib_cb(self, _, response):
         self.calibrated = False
         return response
 
     def land_drone_cb(self, _, response):
-        if self.use_drone:
-            self.tello.land()
+        self.shutdown()
         return response
 
     def shutdown(self):
