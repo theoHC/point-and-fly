@@ -219,6 +219,8 @@ class FPTracker(Node):
 
         if self.stabilizing_frames > 0 and self.score >= 110:
             self.stabilizing_frames -= 1 if self.score < 110 else 0
+        else:
+            self.FPclient.reset()  # reset server if score is bad to try to recover faster
 
         if self.score < 110:
             self.get_logger().info(f"Pose score {self.score:.2f} below threshold, not publishing transform.")
