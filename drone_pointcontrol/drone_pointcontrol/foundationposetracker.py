@@ -5,8 +5,6 @@ from tf2_ros.transform_broadcaster import (
 )
 from sensor_msgs.msg import CameraInfo, Image
 
-from std_msgs.msg import Empty
-
 from scipy.spatial.transform import Rotation as R
 
 from geometry_msgs.msg import Vector3, Quaternion
@@ -27,6 +25,7 @@ from rclpy.qos import (
     DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy)
 
 from std_srvs.srv import Empty
+from std_msgs.msg import Empty as EmptyMsg
 
 class FoundationPoseClient:
     def __init__(self, url):
@@ -130,7 +129,7 @@ class FPTracker(Node):
         )
         self.approximate_time_synchronizer.registerCallback(self.image_callback)
 
-        self.acquired_publisher = self.create_publisher(Empty, '/drone_acquired', 10)
+        self.acquired_publisher = self.create_publisher(EmptyMsg, '/drone_acquired', 10)
 
         self.intrinsic_mat = None
 
@@ -174,15 +173,11 @@ class FPTracker(Node):
             self.get_logger().error(f'Error converting images: {e}')
             return
 
-        # depth_mm = (self.depth_image * 1000.0).astype(np.uint16)
-
-        # cv2.imwrite("depth_raw_mm.png", depth_mm)
-
         h, w = self.color_image.shape[:2]
         mask = np.full((h, w), 255, dtype=np.uint8)
 
         rescore = False
-        if not self.acquired and self.stabilizing_frames <= 0:
+        if not self.acquired and self.stabilizing_frames == 1:
             rescore = True
 
         if self.get_parameter("use_mask_img").get_parameter_value().bool_value:
@@ -214,17 +209,18 @@ class FPTracker(Node):
             self.score = outscore
 
             if self.stabilizing_frames <= 0 and not self.acquired:
+                self.get_logger().info(f"Pose acquired with score {self.score:.2f}. Publishing transform and acquiring drone.")
                 self.acquired_publisher.publish(Empty())
                 self.acquired = True
 
-        if self.stabilizing_frames > 0 and self.score >= 110:
-            self.stabilizing_frames -= 1 if self.score < 110 else 0
-        else:
-            self.FPclient.reset()  # reset server if score is bad to try to recover faster
-
-        if self.score < 110:
-            self.get_logger().info(f"Pose score {self.score:.2f} below threshold, not publishing transform.")
-            return
+        if self.stabilizing_frames > 0:
+            if self.score >= 110:
+                self.stabilizing_frames -= 1
+            else:
+                self.get_logger().warn(f"Rejecting frame due to low score: {self.score:.2f}")
+                self.FPclient.reset()
+                self.stabilizing_frames = int(self.get_parameter("stabilizing_frames").get_parameter_value().integer_value)
+                self.score = -1.0  # clear stale score so next frame re-registers
 
         t_ros = Vector3(x=float(t[0]), y=float(t[1]), z=float(t[2]))
         quat_ros = Quaternion(x=float(quat[0]), y=float(quat[1]), z=float(quat[2]), w=float(quat[3]))

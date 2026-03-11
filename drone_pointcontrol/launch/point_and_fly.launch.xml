@@ -34,7 +34,7 @@
         pkg="tf2_ros"
         exec="static_transform_publisher"
         name="static_tf_camera_offset"
-        args="1 0 0 0 0 0 camera_link drone_target"
+        args="1.5 0 0 0 0 0 camera_link drone_target"
     />
 
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')">

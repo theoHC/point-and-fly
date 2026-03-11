@@ -23,10 +23,14 @@ from geometry_msgs.msg import TransformStamped
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from std_srvs.srv import Empty
+from std_msgs.msg import Empty as EmptyMsg
 
 import tf2_ros
 
 from time import sleep
+
+import logging
+logging.getLogger('djitellopy').setLevel(logging.WARNING)
 
 class TfDiffOnSourceUpdate(Node):
     def __init__(self):
@@ -40,7 +44,7 @@ class TfDiffOnSourceUpdate(Node):
 
         self.declare_parameter("calib_stabilize_time_sec", 2.0)  # how long to wait between acquisition and calibration
 
-        self.declare_parameter("kp_pos", 10.0)
+        self.declare_parameter("kp_pos", 20.0)
         self.declare_parameter("kp_yaw", 5.0)
 
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
@@ -111,7 +115,7 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_yaw = 0.0
 
         self.create_subscription(
-            Empty,
+            EmptyMsg,
             '/drone_acquired',
             self.acquired_callback,
             10,
