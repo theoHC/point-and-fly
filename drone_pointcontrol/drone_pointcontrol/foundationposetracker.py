@@ -39,6 +39,7 @@ class FoundationPoseClient:
         intrinsics,
         mask_path=None,
         mask_img=None,
+        rescore=False
     ):
 
         files = {
@@ -55,7 +56,8 @@ class FoundationPoseClient:
         data = {
             "intrinsics": json.dumps(intrinsics),
             "rgb_shape": json.dumps(list(rgb.shape)),
-            "depth_shape": json.dumps(list(depth.shape))
+            "depth_shape": json.dumps(list(depth.shape)),
+            "rescore": json.dumps(rescore)
         }
         if mask_img is not None:
             data["mask_shape"] = json.dumps(list(mask_img.shape))
@@ -84,7 +86,7 @@ def rs_get_K(intr):
                   [0.0,     0.0,     1.0    ]], dtype=np.float64)
     return K
 
-class PointerController(Node):
+class FPTracker(Node):
     def __init__(self):
         super().__init__('pose_estimator')
 
@@ -204,6 +206,8 @@ class PointerController(Node):
         transform.transform.rotation = quat_ros
         self.tfb.sendTransform(transform)
 
+        self.get_logger().info(f"Pose score:{output['score']:.4f}")
+
     def info_callback(self, info_msg):
         """
         Get the camera intrisics from the cameraInfo topic.
@@ -220,7 +224,7 @@ class PointerController(Node):
 def main(args=None):
     """User Node."""
     rclpy.init(args=args)
-    node = PointerController()
+    node = FPTracker()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
