@@ -177,7 +177,7 @@ class FPTracker(Node):
         mask = np.full((h, w), 255, dtype=np.uint8)
 
         rescore = False
-        if not self.acquired and self.stabilizing_frames == 1:
+        if not self.acquired and self.stabilizing_frames <= 0:
             rescore = True
 
         if self.get_parameter("use_mask_img").get_parameter_value().bool_value:
@@ -208,7 +208,7 @@ class FPTracker(Node):
         if outscore != -1.0:
             self.score = outscore
 
-            if self.stabilizing_frames <= 0 and not self.acquired:
+            if self.stabilizing_frames < 0 and not self.acquired:
                 self.get_logger().info(f"Pose acquired with score {self.score:.2f}. Publishing transform and acquiring drone.")
                 self.acquired_publisher.publish(Empty())
                 self.acquired = True
@@ -216,6 +216,7 @@ class FPTracker(Node):
         if self.stabilizing_frames > 0:
             if self.score >= 110:
                 self.stabilizing_frames -= 1
+                self.get_logger().info(f"High score {self.score:.2f} - stabilizing for {self.stabilizing_frames} more frames.")
             else:
                 self.get_logger().warn(f"Rejecting frame due to low score: {self.score:.2f}")
                 self.FPclient.reset()
