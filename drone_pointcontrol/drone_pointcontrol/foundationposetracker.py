@@ -206,9 +206,9 @@ class FPTracker(Node):
         if outscore != -1.0:
             self.score = outscore
 
-            if self.stabilizing_frames < 0 and not self.acquired:
+            if self.stabilizing_frames <= 0 and not self.acquired:
                 self.get_logger().info(f"Pose acquired with score {self.score:.2f}. Publishing transform and acquiring drone.")
-                self.acquired_publisher.publish(Empty())
+                self.acquired_publisher.publish(EmptyMsg())
                 self.acquired = True
 
         if self.stabilizing_frames > 0:
