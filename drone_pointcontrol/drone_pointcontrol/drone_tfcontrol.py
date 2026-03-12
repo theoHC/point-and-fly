@@ -79,12 +79,11 @@ class TfDiffOnSourceUpdate(Node):
 
         self.last_update_time = self.get_clock().now()
         self.drone_acquired = False
-        self.acquired_time = None
 
-        self.airborne = False
         self.tello = Tello()
         if self.use_drone:
             self.tello.connect()
+            self.tello.takeoff()
     
         self.tf_broadcaster = TransformBroadcaster(self)
         self.static_tf_broadcaster = StaticTransformBroadcaster(self)
@@ -98,8 +97,7 @@ class TfDiffOnSourceUpdate(Node):
         self.create_service(
             Empty,
             '~/reset_calib',
-            self.reset_calib_cb,
-            callback_group=self.cbgroup)
+            self.reset_calib_cb)
 
         self.drone_forward = 0.0
         self.drone_right = 0.0
@@ -110,6 +108,13 @@ class TfDiffOnSourceUpdate(Node):
             EmptyMsg,
             '/drone_acquired',
             self.acquired_callback,
+            10,
+            callback_group=self.cbgroup)
+        
+        self.create_subscription(
+            Twist,
+            '/cmd_vel',
+            self.cmd_vel_callback,
             10,
             callback_group=self.cbgroup)
         
@@ -246,11 +251,11 @@ class TfDiffOnSourceUpdate(Node):
         self.get_logger().info(f"Calibrated drone forward direction: x_forward={self.x_forward}, x_sideways={self.x_sideways}")
         return True
 
+    def cmd_vel_callback(self, msg: Twist):
+        self.set_rc_joystick(msg.linear.x * 20, msg.linear.y * 20, msg.linear.z * 20, msg.angular.z * 20)
+
     def timer_callback(self):
         if self.use_drone :
-            if not self.airborne:
-                self.tello.takeoff()
-                self.airborne = True
             self.tello.send_rc_control(round(self.drone_right),
                                     round(self.drone_forward),
                                     round(self.drone_up),

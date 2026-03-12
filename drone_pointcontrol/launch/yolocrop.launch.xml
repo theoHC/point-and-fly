@@ -15,5 +15,5 @@
     </node>
 
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')"/>
-
+    
 </launch>
