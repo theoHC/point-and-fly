@@ -156,7 +156,7 @@ class FPTracker(Node):
 
         self.tfb = TransformBroadcaster(self)
 
-        self.declare_parameter("stabilizing_frames", 10)
+        self.declare_parameter("stabilizing_frames", 25)
         self.stabilizing_frames = int(self.get_parameter("stabilizing_frames").get_parameter_value().integer_value)
         self.acquired = False
         self.score = -1.0
@@ -214,7 +214,6 @@ class FPTracker(Node):
         if self.stabilizing_frames > 0:
             if self.score >= 110:
                 self.stabilizing_frames -= 1
-                self.get_logger().info(f"High score {self.score:.2f} - stabilizing for {self.stabilizing_frames} more frames.")
             else:
                 self.get_logger().warn(f"Rejecting frame due to low score: {self.score:.2f}")
                 self.FPclient.reset()

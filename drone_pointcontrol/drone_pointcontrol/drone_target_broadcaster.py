@@ -47,7 +47,7 @@ class DroneTargetBroadcaster(Node):
         self.declare_parameter("end_x",    1.5)
         self.declare_parameter("end_y",    0.0)
         self.declare_parameter("end_z",    0.0)
-        self.declare_parameter("speed",    0.0)   # m/s
+        self.declare_parameter("speed",    0.1)   # m/s
         self.declare_parameter("timer_hz", 50.0)  # broadcast frequency
 
         self.parent_frame = (
