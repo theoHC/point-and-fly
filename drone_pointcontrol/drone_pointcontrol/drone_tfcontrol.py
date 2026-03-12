@@ -252,7 +252,8 @@ class TfDiffOnSourceUpdate(Node):
         return True
 
     def cmd_vel_callback(self, msg: Twist):
-        self.set_rc_joystick(msg.linear.x * 20, msg.linear.y * 20, msg.linear.z * 20, msg.angular.z * 20)
+        cmd_mul = 40.0
+        self.set_rc_joystick(msg.linear.x * cmd_mul, msg.linear.y * cmd_mul, msg.linear.z * cmd_mul, msg.angular.z * cmd_mul)
 
     def timer_callback(self):
         if self.use_drone :
