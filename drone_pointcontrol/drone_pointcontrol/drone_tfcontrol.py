@@ -19,7 +19,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 
-from geometry_msgs.msg import TransformStamped
+from geometry_msgs.msg import TransformStamped, Twist
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from std_srvs.srv import Empty
@@ -55,7 +55,6 @@ class TfDiffOnSourceUpdate(Node):
         self.use_tf_static = bool(self.get_parameter("use_tf_static").value)
 
         self.cbgroup = MutuallyExclusiveCallbackGroup()
-        self.controlcbgroup = MutuallyExclusiveCallbackGroup()
 
         # tf2 buffer + listener
         self.tf_buffer = tf2_ros.Buffer(cache_time=rclpy.duration.Duration(seconds=10.0))
@@ -101,12 +100,6 @@ class TfDiffOnSourceUpdate(Node):
             '~/reset_calib',
             self.reset_calib_cb,
             callback_group=self.cbgroup)
-        
-        self.create_service(
-            Empty,
-            'land_drone',
-            self.land_drone_cb,
-            callback_group=self.cbgroup)
 
         self.drone_forward = 0.0
         self.drone_right = 0.0
@@ -119,6 +112,8 @@ class TfDiffOnSourceUpdate(Node):
             self.acquired_callback,
             10,
             callback_group=self.cbgroup)
+        
+
 
     @staticmethod
     def _normalize(frame: str) -> str:
@@ -268,10 +263,6 @@ class TfDiffOnSourceUpdate(Node):
 
     def reset_calib_cb(self, _, response):
         self.calibrated = False
-        return response
-
-    def land_drone_cb(self, _, response):
-        self.shutdown()
         return response
 
     def shutdown(self):
