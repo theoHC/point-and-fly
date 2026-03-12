@@ -4,6 +4,7 @@ from tf2_ros.transform_broadcaster import (
     TransformStamped,
 )
 from sensor_msgs.msg import CameraInfo, Image
+from pointcontrol_msgs.msg import SyncedImage
 
 from scipy.spatial.transform import Rotation as R
 
@@ -101,33 +102,41 @@ class FPTracker(Node):
 
         self.bridge = CvBridge()
 
-        self.info_sub = Subscriber(
-            self,
-            CameraInfo,
-            '/camera/camera/color/camera_info',
+        # self.info_sub = Subscriber(
+        #     self,
+        #     CameraInfo,
+        #     '/camera/camera/color/camera_info',
+        #     qos_profile=image_qos,
+        # )
+
+        # self.depth_sub = Subscriber(
+        #     self,
+        #     Image,
+        #     '/camera/camera/aligned_depth_to_color/image_raw',
+        #     qos_profile=image_qos
+        # )
+
+        # self.color_sub = Subscriber(
+        #     self,
+        #     Image,
+        #     '/camera/camera/color/image_raw',
+        #     qos_profile=image_qos
+        # )
+
+        # self.approximate_time_synchronizer = ApproximateTimeSynchronizer(
+        #     [self.depth_sub, self.color_sub, self.info_sub],
+        #     queue_size=1,
+        #     slop=0.1
+        # )
+        # self.approximate_time_synchronizer.registerCallback(self.image_callback)
+
+        self.create_subscription(
+            SyncedImage,
+            '/cropped/sync',
+            self.image_callback,
             qos_profile=image_qos,
+            callback_group=self.cbgroup
         )
-
-        self.depth_sub = Subscriber(
-            self,
-            Image,
-            '/camera/camera/aligned_depth_to_color/image_raw',
-            qos_profile=image_qos
-        )
-
-        self.color_sub = Subscriber(
-            self,
-            Image,
-            '/camera/camera/color/image_raw',
-            qos_profile=image_qos
-        )
-
-        self.approximate_time_synchronizer = ApproximateTimeSynchronizer(
-            [self.depth_sub, self.color_sub, self.info_sub],
-            queue_size=1,
-            slop=0.1
-        )
-        self.approximate_time_synchronizer.registerCallback(self.image_callback)
 
         self.acquired_publisher = self.create_publisher(EmptyMsg, '/drone_acquired', 10)
 
@@ -162,7 +171,12 @@ class FPTracker(Node):
         self.score = -1.0
 
     
-    def image_callback(self, depth_msg, image_msg, info_msg):
+    def image_callback(self, synced_msg: SyncedImage):
+        info_msg = synced_msg.intrinsics
+        depth_msg = synced_msg.depth
+        image_msg = synced_msg.color
+
+        self.get_logger().info("Received synchronized messages")
         self.info_callback(info_msg)
         
         try:
@@ -229,6 +243,7 @@ class FPTracker(Node):
         transform.transform.translation = t_ros
         transform.transform.rotation = quat_ros
         self.tfb.sendTransform(transform)
+        self.get_logger().info("Inference done")
 
     def info_callback(self, info_msg):
         """

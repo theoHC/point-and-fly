@@ -29,8 +29,8 @@ import tf2_ros
 
 from time import sleep
 
-# import logging
-# logging.getLogger('djitellopy').setLevel(logging.WARNING)
+import logging
+logging.getLogger('djitellopy').setLevel(logging.WARNING)
 
 class TfDiffOnSourceUpdate(Node):
     def __init__(self):
@@ -252,8 +252,12 @@ class TfDiffOnSourceUpdate(Node):
         return True
 
     def cmd_vel_callback(self, msg: Twist):
-        cmd_mul = 40.0
-        self.set_rc_joystick(msg.linear.x * cmd_mul, msg.linear.y * cmd_mul, msg.linear.z * cmd_mul, msg.angular.z * cmd_mul)
+        forward = 50 if msg.linear.x > 0 else -50 if msg.linear.x < 0 else 0
+        right = -50 if msg.linear.y > 0 else 50 if msg.linear.y < 0 else 0
+        up = 50 if msg.linear.z > 0 else -50 if msg.linear.z < 0 else 0
+        yaw = 50 if msg.angular.z > 0 else -50 if msg.angular.z < 0 else 0
+
+        self.set_rc_joystick(forward, right, up, yaw)
 
     def timer_callback(self):
         if self.use_drone :

@@ -22,6 +22,8 @@ from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data)
 
+from pointcontrol_msgs.msg import SyncedImage
+
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 
@@ -153,9 +155,10 @@ class YoloCropNode(Node):
         self.sync = ApproximateTimeSynchronizer([self.color_sub, self.depth_sub], queue_size=1, slop=0.1)
         self.sync.registerCallback(self._synced_cb)
 
-        self.pub_color = self.create_publisher(Image, "/cropped/color/image_raw", image_qos)
-        self.pub_depth = self.create_publisher(Image, "/cropped/aligned_depth_to_color/image_raw", image_qos)
-        self.pub_info = self.create_publisher(CameraInfo, "/cropped/camera_info", image_qos)
+        self.pub_color = self.create_publisher(Image, "/cropped/color/image_raw", qos_profile=image_qos)
+        self.pub_depth = self.create_publisher(Image, "/cropped/aligned_depth_to_color/image_raw", qos_profile=image_qos)
+        self.pub_info = self.create_publisher(CameraInfo, "/cropped/camera_info", qos_profile=image_qos)
+        self.sync_pub = self.create_publisher(SyncedImage, "/cropped/sync", qos_profile=image_qos)
 
 
         self.cx = 0
@@ -243,6 +246,12 @@ class YoloCropNode(Node):
         self.pub_color.publish(out_color_msg)
         self.pub_depth.publish(out_depth_msg)
         self.pub_info.publish(info_out)
+
+        synced_msg = SyncedImage()
+        synced_msg.color = out_color_msg
+        synced_msg.depth = out_depth_msg
+        synced_msg.intrinsics = info_out
+        self.sync_pub.publish(synced_msg)
 
 
 def main():
