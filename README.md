@@ -14,3 +14,5 @@ This package requires that your laptop be connected both to the wifi network of 
 `ros2 launch drone_pointcontrol point_and_fly.launch.xml`
 
 to launch the system. Use the Xterm teleop keyboard to fly the drone to the center of the frame. If the system does not automatically start tracking, run `ros2 service call /reset-pose std_srvs/srv/Empty` to reset the tracked pose. Once the drone is being tracked, run `ros2 topic pub -1 /acquire_drone std_msgs/msg/Empty` to begin automatic calibration of the drone and hand control over to the system.
+
+If the Tello drone does not automatically hold position, print several copies of "floor anti-razzle dazzle.svg" (so named due to its geometric similarity to mid-20th century 'razzle-dazzle' naval camoflage, but for aiding, rather than hindering, localization) and tape them to the floor underneath where you launch the drone.
