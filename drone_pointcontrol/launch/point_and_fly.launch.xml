@@ -3,6 +3,7 @@
     <arg name="firstup" default="True" description="Sets whether or not to launch rviz and the realsense node"/>
     <arg name="use_drone" default="False" description="Sets whether to issue control singals to the drone"/>
     <arg name="manual_acquire" default="False" description="If true, wait on manual call to calibration service"/>
+    <arg name="cmd_src" default="hand" description="Command source: 'hand' for hand_landmarker, 'pong' for drone_target_broadcaster"/>
 
     <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var firstup)\' == \'True\'')">
         <arg name="ros_args" value="--ros-args --log-level WARN"/>
@@ -38,7 +39,8 @@
         name="static_tf_camera_offset"
         args="1.2 0 0 0 0 0 camera_link drone_target"
     /> -->
-    <node pkg="drone_pointcontrol" exec="simple_target"/>
+    <node pkg="drone_pointcontrol" exec="hand_landmarker" on_exit="shutdown" if="$(eval '\'$(var cmd_src)\' == \'hand\'')"/>
+    <node pkg="drone_pointcontrol" exec="drone_target_broadcaster" on_exit="shutdown" if="$(eval '\'$(var cmd_src)\' == \'pong\'')"/>
 
     <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')">
     </node>

@@ -34,6 +34,7 @@ setup(
             'yolotracking = drone_pointcontrol.yoloprecrop:main',
             'positioncontrol = drone_pointcontrol.drone_tfcontrol:main',
             'simple_target = drone_pointcontrol.drone_target_broadcaster:main',
+            'hand_landmarker = drone_pointcontrol.hand_landmarker:main',
         ],
     },
 )

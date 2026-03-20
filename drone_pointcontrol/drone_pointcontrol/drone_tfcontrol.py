@@ -292,7 +292,7 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_yaw = clamp(yaw, -50, 50)
 
     def manual_acquire_cb(self, msg, response):
-        if not self.drone_acquired and self.get_parameter("manual_acquire").get_parameter_value().bool_value:
+        if self.get_parameter("manual_acquire").get_parameter_value().bool_value:
             self.get_logger().info("Manually acquiring drone!")
             self.drone_acquired = True
             self.x_forward = msg.x

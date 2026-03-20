@@ -10,8 +10,6 @@ from scipy.spatial.transform import Rotation as R
 
 from geometry_msgs.msg import Vector3, Quaternion
 
-from message_filters import ApproximateTimeSynchronizer, Subscriber
-
 import numpy as np
 
 import json
@@ -101,34 +99,6 @@ class FPTracker(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.bridge = CvBridge()
-
-        # self.info_sub = Subscriber(
-        #     self,
-        #     CameraInfo,
-        #     '/camera/camera/color/camera_info',
-        #     qos_profile=image_qos,
-        # )
-
-        # self.depth_sub = Subscriber(
-        #     self,
-        #     Image,
-        #     '/camera/camera/aligned_depth_to_color/image_raw',
-        #     qos_profile=image_qos
-        # )
-
-        # self.color_sub = Subscriber(
-        #     self,
-        #     Image,
-        #     '/camera/camera/color/image_raw',
-        #     qos_profile=image_qos
-        # )
-
-        # self.approximate_time_synchronizer = ApproximateTimeSynchronizer(
-        #     [self.depth_sub, self.color_sub, self.info_sub],
-        #     queue_size=1,
-        #     slop=0.1
-        # )
-        # self.approximate_time_synchronizer.registerCallback(self.image_callback)
 
         self.create_subscription(
             SyncedImage,
