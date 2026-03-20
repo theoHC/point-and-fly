@@ -13,6 +13,7 @@ find_package(sensor_msgs REQUIRED)
 # Generate interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/SyncedImage.msg"
+  "srv/Vector2.srv"
   DEPENDENCIES sensor_msgs
 )
 

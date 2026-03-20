@@ -176,7 +176,6 @@ class FPTracker(Node):
         depth_msg = synced_msg.depth
         image_msg = synced_msg.color
 
-        self.get_logger().info("Received synchronized messages")
         self.info_callback(info_msg)
         
         try:
@@ -243,7 +242,6 @@ class FPTracker(Node):
         transform.transform.translation = t_ros
         transform.transform.rotation = quat_ros
         self.tfb.sendTransform(transform)
-        self.get_logger().info("Inference done")
 
     def info_callback(self, info_msg):
         """
