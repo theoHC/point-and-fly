@@ -16,6 +16,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*')),
         (os.path.join('share', package_name, 'config'), glob('config/*')),
         (os.path.join('share', package_name, 'models'), glob('models/*')),
+        (os.path.join('share', package_name, 'models'), glob('meshes/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -35,6 +36,7 @@ setup(
             'positioncontrol = drone_pointcontrol.drone_tfcontrol:main',
             'simple_target = drone_pointcontrol.drone_target_broadcaster:main',
             'hand_landmarker = drone_pointcontrol.hand_landmarker:main',
+            'yolodraw = drone_pointcontrol.yolodraw:main',
         ],
     },
 )

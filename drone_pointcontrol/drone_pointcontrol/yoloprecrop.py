@@ -164,14 +164,6 @@ class YoloCropNode(Node):
         self.cx = 0
         self.cy = 0
 
-    def depth_callback(self, msg: Image):
-        self.get_logger().info(f"Depth message timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d}")
-        pass
-
-    def color_callback(self, msg: Image):
-        self.get_logger().info(f"Color message timestamp: {msg.header.stamp.sec}.{msg.header.stamp.nanosec:09d}")
-        pass
-
     def _info_cb(self, msg: CameraInfo):
         self.last_info = msg
 

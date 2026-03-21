@@ -155,6 +155,7 @@ class HandLandmarkerNode(Node):
         self.declare_parameter('tf_frame_id', 'drone_target')
         self.declare_parameter('distance_multiplier', 3.0)
         self.declare_parameter('target_stability_distance', .03)
+        self.declare_parameter('post_hoc_annotation', False)
 
         model_path = ensure_model(
             Path(self.get_parameter('model_path').get_parameter_value().string_value)
@@ -187,17 +188,23 @@ class HandLandmarkerNode(Node):
 
         self.info_sub = self.create_subscription(
             CameraInfo, '/camera/camera/color/camera_info', self._info_cb, qos_profile_sensor_data)
+        self.info_pub = self.create_publisher(CameraInfo, '~/camera_info', 10)
 
         self.color_sub = Subscriber(
             self, Image, '/camera/camera/color/image_raw', qos_profile=image_qos)
         self.depth_sub = Subscriber(
             self, Image, '/camera/camera/aligned_depth_to_color/image_raw', qos_profile=image_qos)
 
+        queue_size = 1
+        if self.get_parameter('post_hoc_annotation').get_parameter_value().bool_value:
+            # If post_hoc_annotation is enabled, we want to synchronize the latest depth and color frames with the latest CameraInfo, even if their timestamps don't match closely. This allows the TF to be published even when the hand detection is too slow to keep up with the camera frame rate.
+            queue_size = 10
+
         self.sync = ApproximateTimeSynchronizer(
-            [self.color_sub, self.depth_sub], queue_size=1, slop=0.1)
+            [self.color_sub, self.depth_sub], queue_size=queue_size, slop=0.1)
         self.sync.registerCallback(self._synced_cb)
 
-        self.pub_annotated = self.create_publisher(Image, '~/annotated_image', 10)
+        self.pub_annotated = self.create_publisher(Image, '~/annotated_image', image_qos)
         self.pub_markers = self.create_publisher(MarkerArray, '~/hand_markers', 10)
 
         self.get_logger().info('HandLandmarkerNode ready.')
@@ -213,6 +220,7 @@ class HandLandmarkerNode(Node):
 
     def _info_cb(self, msg: CameraInfo):
         self.last_info = msg
+        self.info_pub.publish(msg)
 
     def _synced_cb(self, color_msg: Image, depth_msg: Image):
         if self.last_info is None:
@@ -275,6 +283,22 @@ class HandLandmarkerNode(Node):
                 target_y = mcp_3d[1] + offset_y
                 target_z = mcp_3d[2] + offset_z
 
+                # Add a small green sphere at the target point
+                sphere_marker = Marker()
+                sphere_marker.header.stamp = self.get_clock().now().to_msg()
+                sphere_marker.header.frame_id = 'camera_color_optical_frame'
+                sphere_marker.ns = 'hand_landmarks'
+                sphere_marker.id = 3
+                sphere_marker.type = Marker.SPHERE
+                sphere_marker.action = Marker.ADD
+                sphere_marker.pose.position = Point(x=target_x, y=target_y, z=target_z)
+                sphere_marker.scale = Vector3(x=0.05, y=0.05, z=0.05)
+                sphere_marker.color.r = 0.0
+                sphere_marker.color.g = 1.0
+                sphere_marker.color.b = 0.0
+                sphere_marker.color.a = 1.0
+                markerarr.markers.append(sphere_marker)
+
                 #check if the distance to the previous target is less than target_stability_distance
                 target_stability_distance = self.get_parameter('target_stability_distance').get_parameter_value().double_value
                 distance_to_prev_target = ((target_x - self.prev_target_pos_x) ** 2 + (target_y - self.prev_target_pos_y) ** 2 + (target_z - self.prev_target_pos_z) ** 2) ** 0.5
@@ -296,9 +320,10 @@ class HandLandmarkerNode(Node):
         out_msg = self.bridge.cv2_to_imgmsg(annotated_bgr, encoding='bgr8')
         out_msg.header = color_msg.header
         self.pub_annotated.publish(out_msg)
+        self.last_info.header.stamp = self.get_clock().now().to_msg()
 
     def _publish_target_tf(self):
-        if self.cur_target_z < 0:
+        if self.cur_target_z < 0 or self.get_parameter('post_hoc_annotation').get_parameter_value().bool_value:
             return
         target_tf = TransformStamped()
         target_tf.header.stamp = self.get_clock().now().to_msg()

@@ -1,0 +1,24 @@
+<launch>
+ 
+    <arg name="bag_file" description="Path to the rosbag file to play"/>
+ 
+    <executable cmd="ros2 bag play --loop $(var bag_file) --clock --topics /tf /tf_static /camera/camera/color/camera_info /camera/camera/color/image_raw /camera/camera/aligned_depth_to_color/image_raw --read-ahead-queue-size 1000" output="screen"/>
+ 
+    <node pkg="drone_pointcontrol" exec="yolodraw">
+        <param name="model_path" value="$(find-pkg-share drone_pointcontrol)/models/tello-track-2.pt"/>
+        <param name="mesh_path" value="$(find-pkg-share drone_pointcontrol)/meshes/tello.stl"/>
+        <param name="use_sim_time" value="true"/>
+        <remap from="/camera/camera/color/image_raw" to="/hand_landmarker/post_annotated"/>
+    </node>
+ 
+    <node pkg="drone_pointcontrol" exec="hand_landmarker">
+        <param name="post_hoc_annotation" value="true"/>
+        <param name="use_sim_time" value="true"/>
+        <remap from="~/annotated_image" to="/hand_landmarker/post_annotated"/>
+    </node>
+ 
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/overlay.rviz" on_exit="shutdown">
+        <param name="use_sim_time" value="true"/>
+    </node>
+ 
+</launch>
