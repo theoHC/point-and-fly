@@ -52,9 +52,8 @@ class YoloDrawNode(Node):
         self.imgsz = int(self.get_parameter("imgsz").value)
         self.device = self.get_parameter("device").get_parameter_value().string_value or None
 
-        mesh_path = self.get_parameter("mesh_path").get_parameter_value().string_value
-        self.mesh_uri = f"file://{mesh_path}" if mesh_path else ""
-
+        self.mesh_uri = "package://drone_pointcontrol/meshes/tello.stl"
+    
         self.model = YOLO(model_path)
         self.bridge = CvBridge()
         self.last_info: Optional[CameraInfo] = None
@@ -75,7 +74,7 @@ class YoloDrawNode(Node):
 
         self.pub_image = self.create_publisher(Image, "~/annotated_image", image_qos)
         self.marker_pub = self.create_publisher(Marker, "~/drone_marker", 10)
-        self.create_timer(1.0, self._marker_timer_cb)
+        self.create_timer(.1, self._marker_timer_cb)
 
         self.get_logger().info("YoloDrawNode ready.")
 
@@ -91,8 +90,8 @@ class YoloDrawNode(Node):
         marker.action = Marker.ADD
         marker.mesh_resource = self.mesh_uri
         marker.mesh_use_embedded_materials = True
-        marker.scale = Vector3(x=1.0, y=1.0, z=1.0)
-        marker.color = ColorRGBA(r=1.0, g=1.0, b=1.0, a=1.0)
+        marker.scale = Vector3(x=0.003, y=0.003, z=0.003)
+        marker.color = ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
         self.marker_pub.publish(marker)
 
     def _info_cb(self, msg: CameraInfo):
