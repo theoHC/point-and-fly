@@ -1,11 +1,11 @@
 <launch>
 
-    <arg name="firstup" default="True" description="Sets whether or not to launch rviz and the realsense node"/>
+    <arg name="fullview" default="False" description="Whether to use the full visualization"/>
     <arg name="use_drone" default="False" description="Sets whether to issue control singals to the drone"/>
     <arg name="manual_acquire" default="False" description="If true, wait on manual call to calibration service"/>
     <arg name="cmd_src" default="hand" description="Command source: 'hand' for hand_landmarker, 'pong' for drone_target_broadcaster"/>
 
-    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py" if="$(eval '\'$(var firstup)\' == \'True\'')">
+    <include file="$(find-pkg-share realsense2_camera)/launch/rs_launch.py">
         <arg name="ros_args" value="--ros-args --log-level WARN"/>
         <arg name="align_depth.enable" value="true"/>
 
@@ -33,6 +33,12 @@
         <param name="manual_acquire" value="$(var manual_acquire)"/>
     </node>
 
+    <node pkg="drone_pointcontrol" exec="yolodraw">
+        <param name="model_path" value="$(find-pkg-share drone_pointcontrol)/models/tello-track-2.pt"/>
+        <remap from="/camera/camera/color/image_raw" to="/hand_landmarker/annotated_image"/>
+        <remap from="/camera/camera/color/camera_info" to="/hand_landmarker/camera_info"/>
+    </node>
+
     <!-- <node
         pkg="tf2_ros"
         exec="static_transform_publisher"
@@ -42,7 +48,10 @@
     <node pkg="drone_pointcontrol" exec="hand_landmarker" on_exit="shutdown" if="$(eval '\'$(var cmd_src)\' == \'hand\'')"/>
     <node pkg="drone_pointcontrol" exec="drone_target_broadcaster" on_exit="shutdown" if="$(eval '\'$(var cmd_src)\' == \'pong\'')"/>
 
-    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var firstup)\' == \'True\'')">
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/yolocrop.rviz" on_exit='shutdown' if="$(eval '\'$(var fullview)\' == \'False\'')">
+    </node>
+
+    <node pkg="rviz2" exec="rviz2" args="-d $(find-pkg-share drone_pointcontrol)/config/overlay.rviz" on_exit="shutdown" if="$(eval '\'$(var fullview)\' == \'True\'')">
     </node>
 
     <node pkg="teleop_twist_keyboard" exec="teleop_twist_keyboard" name="teleop_twist_keyboard" launch-prefix="xterm -e" if="$(var use_drone)"/>

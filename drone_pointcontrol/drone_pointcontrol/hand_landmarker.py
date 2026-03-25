@@ -26,6 +26,7 @@ from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data)
 from sensor_msgs.msg import Image, CameraInfo
+from std_msgs.msg import Int32
 from tf2_ros.transform_broadcaster import TransformBroadcaster, TransformStamped
 from geometry_msgs.msg import Vector3, Quaternion, Point
 from visualization_msgs.msg import Marker, MarkerArray
@@ -154,7 +155,7 @@ class HandLandmarkerNode(Node):
         self.declare_parameter('min_tracking_confidence', 0.5)
         self.declare_parameter('tf_frame_id', 'drone_target')
         self.declare_parameter('distance_multiplier', 3.0)
-        self.declare_parameter('target_stability_distance', .03)
+        self.declare_parameter('finger_point_distance', .07)
         self.declare_parameter('post_hoc_annotation', False)
 
         model_path = ensure_model(
@@ -207,16 +208,19 @@ class HandLandmarkerNode(Node):
         self.pub_annotated = self.create_publisher(Image, '~/annotated_image', image_qos)
         self.pub_markers = self.create_publisher(MarkerArray, '~/hand_markers', 10)
 
+        self.viz_state: int = -1
+        self.create_subscription(Int32, '/yolo_draw/viz_state', self._viz_state_cb, 10)
+
         self.get_logger().info('HandLandmarkerNode ready.')
 
-        self.prev_target_pos_x = 0.0
-        self.prev_target_pos_y = 0.0
-        self.prev_target_pos_z = 0.0
         self.cur_target_x = 0.0
         self.cur_target_y = 0.0
         self.cur_target_z = 1.0
 
         self.create_timer(0.1, self._publish_target_tf)
+
+    def _viz_state_cb(self, msg: Int32):
+        self.viz_state = msg.data
 
     def _info_cb(self, msg: CameraInfo):
         self.last_info = msg
@@ -243,6 +247,7 @@ class HandLandmarkerNode(Node):
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
         result = self.detector.detect_for_video(mp_image, timestamp_ms)
 
+        markerarr = MarkerArray()
         if len(result.hand_landmarks) > 0:
             first_hand = result.hand_landmarks[0]
             index_mcp = first_hand[5]   # Index as in index finger; mcp as in metacarpophalangeal joint (the "knuckle" where the finger meets the palm)
@@ -254,8 +259,16 @@ class HandLandmarkerNode(Node):
             tip_3d = deproject_pixel_to_point(
                 depth_msg, self.last_info, self.bridge, index_tip.x * nw, index_tip.y * nh)
             
-            markerarr = MarkerArray()
+
+            distance = 0
+            #calculate the distance between mcp and tip
             if mcp_3d is not None and tip_3d is not None:
+                dx = tip_3d[0] - mcp_3d[0]
+                dy = tip_3d[1] - mcp_3d[1]
+                dz = tip_3d[2] - mcp_3d[2]
+                distance = (dx**2 + dy**2 + dz**2) ** 0.5
+            
+            if mcp_3d is not None and tip_3d is not None and distance > self.get_parameter('finger_point_distance').get_parameter_value().double_value:
                 # Visualize with an arrow
                 line_marker = Marker()
                 line_marker.header.stamp = self.get_clock().now().to_msg()
@@ -299,26 +312,53 @@ class HandLandmarkerNode(Node):
                 sphere_marker.color.a = 1.0
                 markerarr.markers.append(sphere_marker)
 
-                #check if the distance to the previous target is less than target_stability_distance
-                target_stability_distance = self.get_parameter('target_stability_distance').get_parameter_value().double_value
-                distance_to_prev_target = ((target_x - self.prev_target_pos_x) ** 2 + (target_y - self.prev_target_pos_y) ** 2 + (target_z - self.prev_target_pos_z) ** 2) ** 0.5
+                self.cur_target_x = target_x
+                self.cur_target_y = target_y
+                self.cur_target_z = target_z
+            else:
+                line_marker = Marker()
+                line_marker.header.stamp = self.get_clock().now().to_msg()
+                line_marker.header.frame_id = 'camera_color_optical_frame'
+                line_marker.ns = 'hand_landmarks'
+                line_marker.id = 2
+                line_marker.type = Marker.ARROW
+                line_marker.action = Marker.DELETE
+                markerarr.markers.append(line_marker)
 
-                if distance_to_prev_target < target_stability_distance:
-                    self.cur_target_x = target_x
-                    self.cur_target_y = target_y
-                    self.cur_target_z = target_z
-            
-                self.prev_target_pos_x = target_x
-                self.prev_target_pos_y = target_y
-                self.prev_target_pos_z = target_z
+        else:
+            sphere_marker = Marker()
+            sphere_marker.header.stamp = self.get_clock().now().to_msg()
+            sphere_marker.header.frame_id = 'camera_color_optical_frame'
+            sphere_marker.ns = 'hand_landmarks'
+            sphere_marker.id = 3
+            sphere_marker.type = Marker.SPHERE
+            sphere_marker.action = Marker.ADD
+            sphere_marker.pose.position = Point(x=self.cur_target_x, y=self.cur_target_y, z=self.cur_target_z)
+            sphere_marker.scale = Vector3(x=0.05, y=0.05, z=0.05)
+            sphere_marker.color.r = 0.0
+            sphere_marker.color.g = 1.0
+            sphere_marker.color.b = 0.0
+            sphere_marker.color.a = 1.0
+            markerarr.markers.append(sphere_marker)
 
-            self.pub_markers.publish(markerarr)
+        if self.viz_state in (-1, 4):
+            for marker in markerarr.markers:
+                marker.action = Marker.ADD
+        else:
+            for marker in markerarr.markers:
+                marker.action = Marker.DELETE
+
+        self.pub_markers.publish(markerarr)
 
         annotated_rgb = draw_landmarks_on_image(frame_rgb, result)[:h, :w]
         annotated_bgr = cv2.cvtColor(annotated_rgb, cv2.COLOR_RGB2BGR)
 
-        out_msg = self.bridge.cv2_to_imgmsg(annotated_bgr, encoding='bgr8')
+        if self.viz_state in (-1, 3):
+            out_msg = self.bridge.cv2_to_imgmsg(annotated_bgr, encoding='bgr8')
+        else:
+            out_msg = color_msg
         out_msg.header = color_msg.header
+        out_msg.header.stamp = self.get_clock().now().to_msg()
         self.pub_annotated.publish(out_msg)
         self.last_info.header.stamp = self.get_clock().now().to_msg()
 
