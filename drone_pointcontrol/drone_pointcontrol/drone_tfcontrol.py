@@ -44,6 +44,7 @@ class TfDiffOnSourceUpdate(Node):
         self.declare_parameter("calib_stabilize_time_sec", 2.0)  # how long to wait between acquisition and calibration
 
         self.declare_parameter("kp_pos", 0.0)
+        self.declare_parameter("kp_vert_mul", 1.7)  # Multiplier on vertical error to compensate for typically weaker vertical control response
         self.declare_parameter("kp_yaw", 5.0)
 
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
@@ -105,14 +106,6 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_right = 0.0
         self.drone_up = 0.0
         self.drone_yaw = 0.0
-
-        self.declare_parameter("manual_acquire", False)
-
-        # self.create_subscription(
-        #     EmptyMsg,
-        #     '/drone_acquired',
-        #     self.acquired_callback,
-        #     10)
         
         self.create_service(
             Empty,
@@ -182,7 +175,8 @@ class TfDiffOnSourceUpdate(Node):
         self.get_logger().info(f"Errors | Forward: {forward_error:.3f}, Sideways: {sideways_error:.3f}, Vertical: {vertical_error:.3f}, Yaw: {yaw_error:.3f}")
         forward_speed = kp_pos * forward_error
         sideways_speed = -1 * kp_pos * sideways_error
-        vertical_speed = kp_pos * vertical_error
+        vertical_speed = kp_pos * vertical_error \
+            * self.get_parameter("kp_vert_mul").get_parameter_value().double_value
         yaw_speed = kp_yaw * yaw_error
 
         # self.get_logger().info(f"Control | Forward: {forward_speed:.1f}, Sideways: {sideways_speed:.1f}, Vertical: {vertical_speed:.1f}, Yaw: {yaw_speed:.1f}")
@@ -228,14 +222,11 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_acquired = True
         self.calibrated = True
         return response
-    
-    # def acquired_callback(self, msg):
-    #     if not self.drone_acquired and not self.get_parameter("manual_acquire").get_parameter_value().bool_value:
-    #         self.get_logger().info("Drone acquired!")
-    #         self.drone_acquired = True
 
     def reset_calib_cb(self, _, response):
         self.calibrated = False
+        self.drone_acquired = False
+        self.set_rc_joystick(0, 0, 0, 0)
         return response
 
     def shutdown(self):

@@ -102,6 +102,7 @@ class YoloDrawNode(Node):
 
     def _viz_cycle_cb(self):
         if not self.get_parameter("increment_visualizations").get_parameter_value().bool_value:
+            self.viz_state = -1
             return
         idx = _VIZ_CYCLE.index(self.viz_state)
         self.viz_state = _VIZ_CYCLE[(idx + 1) % len(_VIZ_CYCLE)]
