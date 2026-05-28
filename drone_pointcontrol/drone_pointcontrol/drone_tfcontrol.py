@@ -22,13 +22,11 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from geometry_msgs.msg import TransformStamped, Twist
 from tf2_msgs.msg import TFMessage
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
-from pointcontrol_msgs.srv import Vector2
 from std_msgs.msg import Empty as EmptyMsg
 from std_srvs.srv import Empty
 
 import tf2_ros
 
-from time import sleep
 
 import logging
 logging.getLogger('djitellopy').setLevel(logging.WARNING)
@@ -92,9 +90,9 @@ class TfDiffOnSourceUpdate(Node):
         self.static_tf_broadcaster = StaticTransformBroadcaster(self)
 
         self.calibrated = False
-        self.IsCalibrating = False
-        self.x_forward = 1.0
-        self.x_sideways = 0.0
+
+        self.declare_parameter("control_yaw_deg", 0.0)
+        self.control_frame = self._normalize(self.drone_frame) + "_control"
 
         self.timer = self.create_timer(0.1, self.timer_callback, callback_group=self.othercbgroup)
 
@@ -108,18 +106,16 @@ class TfDiffOnSourceUpdate(Node):
         self.drone_up = 0.0
         self.drone_yaw = 0.0
 
-        self._pending_calib_transform = None
-
         self.declare_parameter("manual_acquire", False)
 
-        self.create_subscription(
-            EmptyMsg,
-            '/drone_acquired',
-            self.acquired_callback,
-            10)
+        # self.create_subscription(
+        #     EmptyMsg,
+        #     '/drone_acquired',
+        #     self.acquired_callback,
+        #     10)
         
         self.create_service(
-            Vector2,
+            Empty,
             '/man_acquire',
             self.manual_acquire_cb)
         
@@ -148,22 +144,12 @@ class TfDiffOnSourceUpdate(Node):
         if not self._msg_updates_source(msg):
             return
 
-        if self.drone_acquired and not self.calibrated:
-            # Use the transform directly from the message for calibration
-            t_msg: TransformStamped = None
-            for ts in msg.transforms:
-                if self._normalize(ts.child_frame_id) in self._source_ids:
-                    t_msg = ts
-                    break
-            if t_msg is not None:
-                self._pending_calib_transform = t_msg
+        self.broadcast_control_frame()
 
         if self.drone_acquired and self.calibrated:
-        # Lookup the relative transform target -> source at "latest available"
             try:
-                # Passing Time() gives "latest"
                 t_latest: TransformStamped = self.tf_buffer.lookup_transform(
-                    self._normalize(self.drone_frame),
+                    self.control_frame,
                     self._normalize(self.target_frame),
                     rclpy.time.Time(),
                     timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
@@ -183,8 +169,8 @@ class TfDiffOnSourceUpdate(Node):
         kp_pos = self.get_parameter("kp_pos").get_parameter_value().double_value
         kp_yaw = self.get_parameter("kp_yaw").get_parameter_value().double_value
 
-        forward_error = self.x_forward * t_latest.transform.translation.x + self.x_sideways * t_latest.transform.translation.z
-        sideways_error = self.x_sideways * t_latest.transform.translation.x - self.x_forward * t_latest.transform.translation.z
+        forward_error = t_latest.transform.translation.x
+        sideways_error = t_latest.transform.translation.z
         vertical_error = t_latest.transform.translation.y
         yaw_error = Rotation.from_quat([
             t_latest.transform.rotation.x,
@@ -203,68 +189,6 @@ class TfDiffOnSourceUpdate(Node):
 
         self.set_rc_joystick(forward_speed, sideways_speed, vertical_speed, 0)
 
-    def check_drone_forward(self, t_start: TransformStamped) -> bool:
-        self.IsCalibrating = True
-        calibFrameId = "drone_calib_start"
-        #Figure out which of x or z is forward for the drone by moving it and then checking which tf change is greater.
-        t_start.child_frame_id = calibFrameId
-
-        if self.use_drone:
-            self.tello.move_forward(25)
-        else:
-            self.get_logger().info(f"Simulating drone forward movement by waiting 2 seconds...")
-            sleep(2.0)
-
-        t_end: TransformStamped = TransformStamped()
-
-        startedwaiting = self.get_clock().now()
-        foundTransform = False
-        
-        while not foundTransform and (self.get_clock().now() - startedwaiting < rclpy.duration.Duration(seconds=6.0)):
-            t_start.header.stamp = self.get_clock().now().to_msg()
-            self.tf_broadcaster.sendTransform(t_start)
-            rclpy.spin_once(self, timeout_sec=0.1)
-            try:
-                t_end = self.tf_buffer.lookup_transform(
-                    self._normalize(self.drone_frame),
-                    calibFrameId,
-                    rclpy.time.Time(),
-                    timeout=rclpy.duration.Duration(seconds=self.timeout_sec),
-                )
-
-                transform_distance = ((t_end.transform.translation.x)**2 + \
-                                     (t_end.transform.translation.z)**2) ** 0.5
-
-                if transform_distance > .2:  # Check if the transform has changed significantly to consider it valid
-                    foundTransform = True
-            except Exception as e:
-                self.get_logger().warn(f"Waiting for calibration transform... {type(e).__name__}: {e}")
-
-        if not foundTransform:
-            self.get_logger().error("Failed to calibrate due to drone not moving.")
-            self.IsCalibrating = False
-
-            if self.use_drone:
-                self.tello.move_back(25)
-
-            return False
-
-        dx = t_end.transform.translation.x
-        dz = t_end.transform.translation.z
-
-        self.get_logger().info(f"Calibration movement: dx={dx=:.3f}, dz={dz=:.3f}")
-
-        if abs(dx) > abs(dz):
-            self.x_forward = dx / abs(dx)
-            self.x_sideways = 0
-        else:
-            self.x_forward = 0
-            self.x_sideways = dz / abs(dz)
-        
-        self.get_logger().info(f"Calibrated drone forward direction: x_forward={self.x_forward}, x_sideways={self.x_sideways}")
-        self.IsCalibrating = False
-        return True
-
     def cmd_vel_callback(self, msg: Twist):
         forward = 50 if msg.linear.x > 0 else -50 if msg.linear.x < 0 else 0
         right = -50 if msg.linear.y > 0 else 50 if msg.linear.y < 0 else 0
@@ -273,13 +197,21 @@ class TfDiffOnSourceUpdate(Node):
 
         self.set_rc_joystick(forward, right, up, yaw)
 
-    def timer_callback(self):
-        if self.drone_acquired and not self.calibrated and self._pending_calib_transform is not None:
-            self.get_logger().info("Checking drone forward direction...")
-            self.calibrated = self.check_drone_forward(self._pending_calib_transform)
-            self._pending_calib_transform = None
+    def broadcast_control_frame(self):
+        yaw_deg = self.get_parameter("control_yaw_deg").get_parameter_value().double_value
+        q = Rotation.from_euler('y', yaw_deg, degrees=True).as_quat()  # [x, y, z, w]
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = self._normalize(self.drone_frame)
+        t.child_frame_id = self.control_frame
+        t.transform.rotation.x = q[0]
+        t.transform.rotation.y = q[1]
+        t.transform.rotation.z = q[2]
+        t.transform.rotation.w = q[3]
+        self.tf_broadcaster.sendTransform(t)
 
-        if self.use_drone and not self.IsCalibrating:
+    def timer_callback(self):
+        if self.use_drone:
             self.tello.send_rc_control(round(self.drone_right),
                                     round(self.drone_forward),
                                     round(self.drone_up),
@@ -287,23 +219,20 @@ class TfDiffOnSourceUpdate(Node):
 
     def set_rc_joystick(self, forward: float, right: float, up: float, yaw: float):
         self.drone_forward = clamp(forward, -50, 50)
-        self.drone_right = clamp(right, -50, 50)
+        self.drone_right = -1 * clamp(right, -50, 50)
         self.drone_up = clamp(up, -50, 50)
         self.drone_yaw = clamp(yaw, -50, 50)
 
-    def manual_acquire_cb(self, msg, response):
-        if self.get_parameter("manual_acquire").get_parameter_value().bool_value:
-            self.get_logger().info("Manually acquiring drone!")
-            self.drone_acquired = True
-            self.x_forward = msg.x
-            self.x_sideways = msg.y
-            self.calibrated = True
+    def manual_acquire_cb(self, _, response):
+        self.get_logger().info("Manually acquiring drone!")
+        self.drone_acquired = True
+        self.calibrated = True
         return response
     
-    def acquired_callback(self, msg):
-        if not self.drone_acquired and not self.get_parameter("manual_acquire").get_parameter_value().bool_value:
-            self.get_logger().info("Drone acquired!")
-            self.drone_acquired = True
+    # def acquired_callback(self, msg):
+    #     if not self.drone_acquired and not self.get_parameter("manual_acquire").get_parameter_value().bool_value:
+    #         self.get_logger().info("Drone acquired!")
+    #         self.drone_acquired = True
 
     def reset_calib_cb(self, _, response):
         self.calibrated = False

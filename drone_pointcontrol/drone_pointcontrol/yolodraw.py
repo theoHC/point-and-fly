@@ -55,7 +55,7 @@ class YoloDrawNode(Node):
         self.declare_parameter("marker_yaw", 0.0)
         self.declare_parameter("marker_y_off", -0.01)
         self.declare_parameter("increment_visualizations", True)
-        self.declare_parameter("viz_cycle_hz", 0.5)
+        self.declare_parameter("viz_cycle_period", 4.0)
 
         model_path = self.get_parameter("model_path").get_parameter_value().string_value
         if not model_path:
@@ -95,8 +95,8 @@ class YoloDrawNode(Node):
 
         self.create_timer(0.1, self._marker_timer_cb)
 
-        viz_cycle_hz = self.get_parameter("viz_cycle_hz").get_parameter_value().double_value
-        self.create_timer(1.0 / viz_cycle_hz, self._viz_cycle_cb)
+        viz_cycle_period = self.get_parameter("viz_cycle_period").get_parameter_value().double_value
+        self.create_timer(viz_cycle_period, self._viz_cycle_cb)
 
         self.get_logger().info("YoloDrawNode ready.")
 
@@ -119,7 +119,7 @@ class YoloDrawNode(Node):
         y_off = self.get_parameter("marker_y_off").get_parameter_value().double_value
         marker = Marker()
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.header.frame_id = "drone_pose"
+        marker.header.frame_id = "drone_pose_control"
         marker.ns = "drone_mesh"
         marker.id = 0
         marker.type = Marker.MESH_RESOURCE
@@ -133,7 +133,7 @@ class YoloDrawNode(Node):
         marker.pose.position.y = y_off
         x, y, z, w = Rotation.from_euler("y", yaw, degrees=True).as_quat()
         marker.pose.orientation = Quaternion(x=x, y=y, z=z, w=w)
-        marker.color = ColorRGBA(r=0.0, g=0.0, b=1.0, a=1.0)
+        marker.color = ColorRGBA(r=0.0, g=1.0, b=1.0, a=1.0)
         self.marker_pub.publish(marker)
 
     def _info_cb(self, msg: CameraInfo):
