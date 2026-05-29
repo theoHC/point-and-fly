@@ -43,8 +43,8 @@ class TfDiffOnSourceUpdate(Node):
 
         self.declare_parameter("calib_stabilize_time_sec", 2.0)  # how long to wait between acquisition and calibration
 
-        self.declare_parameter("kp_pos", 0.0)
-        self.declare_parameter("kp_vert_mul", 1.7)  # Multiplier on vertical error to compensate for typically weaker vertical control response
+        self.declare_parameter("kp_pos", 60.0)
+        self.declare_parameter("kp_vert_mul", 2.5)  # Multiplier on vertical error to compensate for typically weaker vertical control response
         self.declare_parameter("kp_yaw", 5.0)
 
         self.use_drone = self.get_parameter("use_drone").get_parameter_value().bool_value
